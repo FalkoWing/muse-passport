@@ -67,6 +67,8 @@ Passport BSP 来源与修改保留在 [UPSTREAM.md](esp32/components/passport_bs
 | `Muse-Passport-1.0.1-full.bin` | 从地址 0 刷入的完整初始化镜像；社区刷机使用，**覆盖已有配置/配对，需要重新设置** |
 | `SHA256SUMS` | Release 附件校验和；ZIP 内另有逐文件校验和 |
 
+发行 APK 证书 SHA-256：`0d304c4229c97b19fbaffe5423e294eb0a04ae38c029a453acfd41d4cadaf11c`。
+
 首次替换厂商固件前，确认是 FoloToy AI Passport 并保存完整 8 MB 原机备份。备份含私人凭据，请留在自己的电脑，不上传。
 
 ```sh

@@ -65,6 +65,9 @@ def main():
         dest.parent.mkdir(parents=True,exist_ok=True)
         shutil.copy2(BUILD / name, dest)
     shutil.copy2(ROOT / 'README.md', OUT / '使用说明.md')
+    icon = OUT / 'android/assets/muse-passport-icon.svg'
+    icon.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(ROOT / 'android/assets/muse-passport-icon.svg', icon)
     for notice in ('LICENSE', 'NOTICE', 'THIRD_PARTY.md'):
         shutil.copy2(ROOT / notice, OUT / notice)
     third = OUT / 'THIRD_PARTY'
