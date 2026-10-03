@@ -14,59 +14,159 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 
-# Muse Gadgets
+<!-- Modified for Muse Passport community distribution, 2026-10-03. -->
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset=".github/images/muse-gadgets-dark.png">
-    <img src=".github/images/muse-gadgets-light.png" width="900" alt="Muse gadgets: a Waveshare round AMOLED, an M5Stack StickS3, Muse Home Link, a Raspberry Pi and a Seeed reTerminal e-ink display">
-  </picture>
-</p>
+# Muse Passport
 
-Muse gadgets are open source devices you build yourself. Program an
-off-the-shelf ESP32 board or set up a Raspberry Pi with our device SDKs, then
-connect Muse to your displays, buttons, sensors, actuators, and whatever else
-you've got lying on your workbench.
+<img src="android/assets/muse-passport-icon.svg" width="88" alt="Muse Passport 图标">
 
-We open sourced the SDKs and firmware here. It's built by hackers, for hackers,
-just for fun. Side effects of tinkering may include bricked boards, voided
-warranties, brownouts, or bankruptcies. Proceed at your own risk!
+让随身 ESP32 设备通过蓝牙借用 Android 手机网络，与 Muse 语音对话，在小屏幕上阅读中文转录与回复。目前已在 **FoloToy AI Passport** 实机验证。
 
-| | |
+这是基于 [Muse 官方 Gadgets 开源硬件方案](https://gadgets.muse.ai/) 与 [Muse Gadget SDK](https://github.com/facebookincubator/muse-gadget-sdk) 的社区衍生项目，包含设备固件与 Android 伴侣 App。与 Meta、Muse 或 FoloToy 官方没有隶属或背书关系。
+
+## 为什么需要 Android 伴侣 App
+
+ESP32 自己直连 Muse，要求它所在的 Wi-Fi 能访问 Muse 服务。Muse Passport 把联网交给手机：设备只需 BLE 连接，日常无需设备 Wi-Fi、手机热点或随身电脑；户外也可以用手机移动网络。**手机上的 Muse Passport App 必须能够正常访问 Muse 官方服务**，仅有蓝牙连接还不够。
+
+App 使用 Android 系统网络，无需填写代理软件名称、地址或 SOCKS 端口。若手机 VPN 使用分应用规则，请包含 Muse Passport。官方 Muse App 负责账号绑定与完整聊天记录，本伴侣 App 负责连接设备、传输语音和返回文字。
+
+```mermaid
+flowchart LR
+    P[随身设备：录音与阅读] <-->|绑定、加密 BLE| A[Muse Passport Android App]
+    A <-->|手机网络| M[Muse 官方服务]
+```
+
+按住 OK 说话、松开发送；支持正常语速、本轮完整转录、Muse 文字回复和上下翻页。设备界面为中文，字库覆盖 GB2312 简体、标准 Big5 繁体及常用标点。App 可设置自己的 SDK token，断线后自动重试，连接期间提供常驻通知。
+
+## 硬件和兼容范围
+
+方案可以移植到其他合适的 ESP32 硬件，**不能把“能移植”理解为现成固件可以直接刷入**。当前桥接固件、引脚与 UI 仅适配并验证 FoloToy AI Passport；其他板型需要改 BSP、麦克风、显示和按键驱动并重新验证。上游 SDK 保留的其他板型支持不代表已验证本项目的手机桥接。
+
+| 项目 | 当前实测 / 移植要求 |
 |---|---|
-| [**ESP32 Device SDK**](esp32) | Connect your ESP32 board to Muse through our open source SDK. Throw in a screen to show images, add audio in and out, or wire up other sensors. |
-| [**Linux Device SDK**](linux) | Turn that spare Raspberry Pi or Linux box into a Muse gadget. Hack in your own commands to let Muse handle sysadmin chores or your Home Assistant setup. |
+| 芯片与无线 | 实测 ESP32-C3；其他设备需 ESP-IDF 支持且具备 BLE，首次官方初始化需 Wi-Fi。ESP32-S2 无蓝牙，不能直接采用本方案 |
+| Flash / RAM | 当前分区要求至少 8 MB Flash；C3 实测无 PSRAM，使用内部 RAM。应用约 3.07 MiB，单个 3.875 MiB 槽剩余约 21%；换板仍需核对任务栈、音频队列和显示内存 |
+| 麦克风 | 必需；能提供 16 kHz、16 bit、单声道 PCM。可适配 I2S 数字麦克风或音频 codec；Passport 使用 ES8311 音频接口，不能只更换 GPIO 而忽略采样格式与增益 |
+| 屏幕 | 阅读功能必需；实测 ST7789P3 240×320 竖屏。其他尺寸/控制器需适配驱动、布局、字体与分页 |
+| 按键 | 说话键与上下导航；实测三键 ADC 输入。替代 GPIO 按键需适配按下、松开及长按事件 |
+| 可选硬件 | 电池与电量计适合随身使用；扬声器不是当前文字回复功能的必要条件，尚未实现 Muse 回复语音播放 |
+| 手机 | Android 8.0+，arm64；实测 Pixel 10 Pro XL / Android 17；iOS 伴侣版尚未实现 |
+| Muse | 自己的账号、官方 Muse App、[Gadget SDK token](https://gadgets.muse.ai/settings/sdk-tokens)，且手机 App 能访问 Muse 服务 |
+| 刷机 | USB 数据线与电脑；发布固件只适用于 FoloToy AI Passport |
 
-Before you flash or pair a gadget, get an
-[SDK token](https://gadgets.muse.ai/settings/sdk-tokens) and review the
-[Gadget SDK Terms](https://gadgets.muse.ai/sdk-terms). Every gadget needs a
-token to pair.
+Passport BSP 来源与修改保留在 [UPSTREAM.md](esp32/components/passport_bsp/UPSTREAM.md)。GPIO21 是背光，控制台须使用原生 USB Serial/JTAG，不能用 UART0 抢占它。三键共享 ADC，音频与屏幕共享的外设由 BSP 管理。
 
-ESP32 and Linux gadgets pair with the Muse app on iOS and Android, via
-Settings > Devices. Turn on Developer mode there first, then look for devices
-prefixed with "MuseGadget".
-Each directory has a `README.md` to get started and an `AGENTS.md` for coding
-agents like [Muse Code](https://developer.meta.com/ai/lp/muse-code/).
+## 下载与刷机
 
-## Community
+从 [GitHub Releases](https://github.com/FalkoWing/muse-passport/releases) 下载 **1.0.1 预发布**的配套文件。源码不存安装包，封面仅用于玩法社区。
 
-Meet other hackers who are building and customizing Muse gadgets in our
-community [Discord](https://discord.gg/3bhjCkZdd6). Get inspired, support each
-other, and share what you make.
+| 文件 | 用途 |
+|---|---|
+| `Muse-Passport-1.0.1.apk` | 已签名、不可调试的 Android App |
+| `Muse-Passport-1.0.1.zip` | APK、四段固件、刷机参数、本说明、许可证和校验和 |
+| `Muse-Passport-1.0.1-full.bin` | 从地址 0 刷入的完整初始化镜像；社区刷机使用，**覆盖已有配置/配对，需要重新设置** |
+| `SHA256SUMS` | Release 附件校验和；ZIP 内另有逐文件校验和 |
 
-## License
+首次替换厂商固件前，确认是 FoloToy AI Passport 并保存完整 8 MB 原机备份。备份含私人凭据，请留在自己的电脑，不上传。
 
-Muse Gadgets is licensed under the Apache License, Version 2.0, found in
-[`LICENSE`](LICENSE), except for these third-party files, which keep their
-upstream licenses:
+```sh
+python -m pip install 'esptool>=5,<6'
+# PORT 替换成设备串口，macOS /dev/cu.usbmodem…、Linux /dev/ttyACM…、Windows COM…
+python -m esptool --chip esp32c3 -p PORT chip-id
+python -m esptool --chip esp32c3 -p PORT -b 460800 read-flash 0 0x800000 passport-backup.bin
+```
 
-| Path | Upstream | License |
-|---|---|---|
-| [`esp32/components/minimp3/include/minimp3.h`](esp32/components/minimp3) | [lieff/minimp3](https://github.com/lieff/minimp3) | CC0-1.0, see [`LICENSE`](esp32/components/minimp3/LICENSE) |
-| [`esp32/main/pixel_font.c`](esp32/main/pixel_font.c) | Adafruit GFX `glcdfont.c` | BSD-2-Clause, in the file header |
+芯片检查会重启设备，不能代替板型确认。首次安装可用完整镜像：
 
-Dependencies fetched at build time are under their own licenses: ESP-IDF
-components (into `esp32/managed_components/`), and the simulator's LVGL and
-SDL (listed in [`esp32/simulator/THIRD_PARTY.md`](esp32/simulator/THIRD_PARTY.md)).
+```sh
+python -m esptool --chip esp32c3 -p PORT -b 460800 write-flash 0 Muse-Passport-1.0.1-full.bin
+```
 
-The Apache License does not cover the [Jollybot avatar](esp32/avatar).
+**已有 Muse 固件时优先用四段方式升级，保留 NVS 中的 token 和配对**：解压 ZIP，进入 `muse-passport-1.0.1/firmware/`，执行：
+
+```sh
+python -m esptool --chip esp32c3 -p PORT -b 460800 \
+  --before default-reset --after hard-reset write-flash @flash_args
+```
+
+四段地址为 bootloader `0x0`、分区表 `0x10000`、OTA 元数据 `0x1d000`、应用 `0x20000`。不必擦除整个 Flash，不烧写 eFuse；完整镜像会写入这些段之间的空白，覆盖 NVS，不能当作保留配置的升级。恢复厂商系统使用自己的原机备份。连接失败时确认数据线、端口与串口权限，再按设备厂商的下载模式操作。
+
+## 安装 App、设置 token 与绑定账号
+
+1. 安装 APK，打开 **Muse Passport**、开启蓝牙并允许所需权限。发行版与旧调试版签名不同，不能覆盖安装；切换须先卸载旧 App，会清除手机设置与本轮缓存，但不会清除设备配对。以后发行更新可以覆盖安装。
+2. 点击“选择设备”，选择 `MuseGadget-XXXXXX`，点击“连接 Passport”。系统蓝牙配对弹窗要求 PIN 时，输入 Passport 屏幕上的六位数字。
+3. 打开 App 的“设备设置 → 设置 SDK token”，粘贴自己的 `mgst_…` token，点击“保存到设备”。设备保存后重启，App 重连后检查“SDK token 已设置”。公开固件不包含维护者或其他用户的 token。
+4. 若设备已绑定 Muse 账号，等待“Muse 已连接”即可。全新设备先断开伴侣 App，在官方 Muse App 的 **Settings → Devices → Developer mode** 开启开发者模式，添加同名设备；按官方流程选择可用 Wi-Fi、输入密码并确认，设备要求确认时按 OK。初始化完成后退出官方设备设置页，再回到 Muse Passport 连接。
+5. **首次官方账号初始化仍需 Wi-Fi 设置步骤，尚未实现纯 BLE 首次配对**；官方流程连接失败时在设备设置中重新选择可访问 Muse 的网络。账号初始化完成后的日常对话才可以只使用手机网络。SDK token 设置不是账号绑定，系统蓝牙绑定也不是 Muse 账号绑定。
+
+Passport 同时只能被一个 App 连接，官方 Muse App 的设备设置页与伴侣 App 不能同时占用它。普通聊天页可以查看对话。公开包不继承编译时的私有 token：从旧开发固件升级前，请先通过新 App 保存自己的 token。
+
+## 日常对话与按键
+
+看到“Muse 已连接”后，按住 OK 说话，松开等待转录与回复。每次新录音替换上一轮；完整聊天记录请在官方 Muse App 查看。
+
+| 操作 | 效果 |
+|---|---|
+| 按住 OK / 松开 | 录音 / 发送新一轮语音 |
+| 短按上键 / 下键 | 上一页 / 下一页 |
+| 回复第一页短按上键 | 回看自己本轮的完整转录；从转录末页向下进入回复 |
+| 长按下键约 0.8 秒 | 打开设备菜单 |
+| 菜单中下键 / OK | 选择 / 确认；选择关闭可退出菜单 |
+| 熄屏后按上下键 | 先唤醒，首次不翻页 |
+| App 或常驻通知点“断开” | 结束桥接；续玩时重新连接设备 |
+
+## 常见问题与当前边界
+
+- **蓝牙已连接，Muse 未连接**：检查手机 Muse Passport App 的网络与 VPN 分应用规则，确认设备已设置有效 token、已绑定 Muse 账号。无需添加代理端口。设备与网络断开后会自动重试，可在 App 断开后重新连接。
+- **能看转录但没回复**：确认使用配套 1.0.1 App 与固件，并等待手机 Muse App 的回复；重新连接后再发新一轮。本轮阅读缓存不是长期聊天历史，App 进程结束或会话重建可能丢失。
+- **繁体或方块**：Muse 服务端决定识别文字与语言。扩展字库解决标准 Big5 显示，不强制服务端输出简体，也不提高识别准确率；生僻字、HKSCS 和 emoji 仍可能缺字。
+- **特别长的内容**：上下键按屏幕页码翻页；单条及本轮合并回复各有 64 KiB UTF-8 上限，手机最多缓存 32 条。超限全文看官方 Muse App。
+- **清除与转交设备**：App 可单独清除 SDK token；设备账号/Wi-Fi 重置不自动清除它。转交前分别清除 token 和账号配对。保存中断时重连检查状态，不把断线当作保存成功。
+
+当前不提供 iOS 伴侣、回复语音播放或设备 OTA。熄屏只关闭背光，不代表完整低功耗休眠。已验证正常语速语音、简繁中文显示、本轮转录、回复及分页；全新设备完整初始化、App 写入真实 token 后重启重连、长期锁屏、跨手机与网络切换、续航仍需进一步实测，因此首次发行标记为预发布。
+
+## 开发与构建
+
+固件固定 **ESP-IDF 6.0.1**；Android 使用 **JDK 17**、Android SDK 36 / Build Tools 35.0.0、Python 3.13，Gradle 8.13、AGP 8.13.2、Chaquopy 17.0.0。构建脚本默认 macOS Homebrew 路径；其他安装设置 `JAVA_HOME`、`ANDROID_HOME`、`PASSPORT_BUILD_PYTHON`；Windows 可直接用 `gradlew.bat`。IDF 自定义路径设置 `IDF_EXPORT` 或先激活该版本。
+
+```sh
+git clone --branch passport https://github.com/FalkoWing/muse-passport.git
+cd muse-passport/esp32
+./tools/passport.sh release-build        # 独立空 token 的公开 BLE 配置
+cd ../android
+./tools/build.sh assembleDebug lintDebug
+# 发行签名仅首次创建；已有密钥必须保留、另行安全备份。
+python3 tools/setup_signing.py
+./tools/build.sh assembleRelease lintRelease
+python3 tools/package_release.py
+```
+
+发行密钥在忽略目录 `.private/`，不要上传私钥、密码或个人路径配置。自己构建的 APK 与本项目 Release 签名不同。固件私有开发可用 `./tools/passport.sh menuconfig`、`build`、`ble-build`；这些二进制可能含个人 token，**不可公开分发**。发布必须使用 `release-build` 并运行公开包校验。
+
+```sh
+# 固件主机测试，在 esp32/ 下执行
+python3 -m unittest discover -s tests -p 'test_*.py'
+# Android 后端和跨语言测试，在 android/ 下执行
+PYTHONPATH=../linux/src:app/src/main/python python3 -m unittest discover -s tests -v
+javac -d /tmp/passport-protocol app/src/main/java/ai/muse/passport/BridgeProtocol.java tests/ProtocolTest.java
+java -cp /tmp/passport-protocol ProtocolTest
+```
+
+测试中的生产 C 阅读解析器需要 ESP-IDF 已获取的 cJSON 组件。主机测试覆盖音频编码、协议、回复关联、分页、字库、按键和 token 存储；不能代替真实 BLE、Muse 服务和续航测试。修改共享 SDK/UI 时，还需构建其他板型做回归。
+
+| 路径 | 内容 |
+|---|---|
+| `android/` | 伴侣 App、自有图标、构建和测试 |
+| `esp32/` | 官方 SDK 基础、Passport BSP/固件/字库和测试 |
+| `linux/src/musegadget/` | Android 依赖的上游 Noise/API 协议模块，必须随源码保留 |
+| `NOTICE`、`THIRD_PARTY.md` | 来源、第三方许可与资源例外，须保留 |
+
+`passport` 分支为本项目开发与发行分支；`main` 保留上游 SDK，便于比较与同步。上游板型文档、许可和开发规范保留原结构；使用说明集中在本文。构建输出、个人需求/开发经验文档、原机/NVS 备份、凭据和社区封面均不进入源码仓库。
+
+## 隐私与许可证
+
+公开固件没有预置个人 token，每位用户使用自己的账号和 token。凭据通过已认证、加密的 BLE 通道传输，当前设备 NVS **没有静态加密**。手机只在会话内存中持有设备凭据和本轮文本，不把账号/token 存为配置文件；App 备份已禁用。语音与文本发送至 Muse 服务用于对话。
+
+代码沿用 [Apache-2.0](LICENSE)，不是把官方 SDK 改为 MIT。厂商 BSP 与测试桩保留 MIT、Source Han 字库保留 SIL OFL 1.1，其他文件和依赖依照各自许可；见 [第三方说明](THIRD_PARTY.md)。上游 Jollybot 角色不属于 Apache-2.0 授权，不宣称本项目拥有或可重新授权角色形象；App 使用自有图标。
+
+源码许可与 [Muse Gadget SDK Token 使用条款](https://gadgets.muse.ai/sdk-terms) 分开适用。当前 token 条款限个人、非商业使用；源码开源不提供服务授权，也不允许公开分享维护者的 token。感谢 Muse Gadget SDK、[FoloToy AI Passport](https://gitee.com/FoloToy/ai-passport)、ESP-IDF、LVGL 与 Source Han Sans。

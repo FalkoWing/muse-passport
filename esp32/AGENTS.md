@@ -1,3 +1,4 @@
+<!-- Modified for Muse Passport community integration, 2026-10-04. -->
 <!--
 Copyright (c) Meta Platforms, Inc. and affiliates.
 
@@ -54,6 +55,7 @@ before adding a feature to one.
 | Waveshare ESP32-S3-Touch-AMOLED-1.75 | `esp32s3` | `devices/sdkconfig.muse;devices/sdkconfig.muse-waveshare-s3-175` | manual (below) |
 | AIPI Lite | `esp32s3` | `devices/sdkconfig.muse;devices/sdkconfig.muse-aipi` | manual |
 | Waveshare ESP32-C6-Touch-AMOLED-1.8 | `esp32c6` | `devices/sdkconfig.muse;devices/sdkconfig.muse-waveshare-c6-18` | manual |
+| FoloToy AI Passport (experimental; BLE voice/text tested) | `esp32c3` | `devices/sdkconfig.muse;devices/sdkconfig.muse-folotoy-passport` | `tools/passport.sh build` |
 | Seeed SenseCAP Watcher | `esp32s3` | `devices/sdkconfig.muse;devices/sdkconfig.muse-sensecap-watcher` | manual |
 | M5Stack StickS3 | `esp32s3` | `devices/sdkconfig.muse;devices/sdkconfig.muse-m5stack-sticks3` | manual |
 | M5Stack StickC Plus2 | `esp32` | `devices/sdkconfig.muse;devices/sdkconfig.muse-m5stack-stickc-plus2` | manual |
@@ -67,11 +69,19 @@ like most WS2812s: turn the option off in `idf.py menuconfig`, or in
 
 ## Build
 
-Every build needs the user's SDK token (`mgst_…`, from gadgets.muse.ai >
+Except the Passport public BLE release, every build needs the user's SDK token (`mgst_…`, from gadgets.muse.ai >
 Account > SDK tokens). Ask for it, then set `CONFIG_GADGET_SDK_TOKEN="mgst_…"`
 in that build directory's `sdkconfig` (or with `idf.py menuconfig`) before
 building. Without it the build warns, and the gadget will stop pairing once
 Muse requires tokens. Never commit the token or print it in full.
+
+Passport BLE public releases use `tools/passport.sh release-build`, which creates
+an independent token-free configuration. Users set their SDK token from the
+Muse Passport Android App over bonded, authenticated BLE. `ble-build` retains
+the private build default for existing developers; never publish that binary.
+The NVS `sdk_token` override takes precedence, including an explicit empty clear.
+Saving/clearing requires commit and readback, then reboot before changing the
+pairing/refresh pointer. Ordinary NVS is not encrypted at rest in this profile.
 
 ### DevKitC-1 (default)
 
@@ -460,3 +470,5 @@ or `CXX` to change compilers.
 2. The host tests pass.
 3. If you flashed, the boot log reaches `starting`, and the log shows no
    panic or reboot loop.
+
+For Passport work, read [device constraints and validation boundaries](devices/FOLOTOY_PASSPORT.md) before modifying the audio path, BLE bridge or text reader. If a local `../docs/PASSPORT_MUSE_DEVELOPMENT_NOTES.md` exists, read it for additional failure-mode notes; that private journal is intentionally not part of the public repository.

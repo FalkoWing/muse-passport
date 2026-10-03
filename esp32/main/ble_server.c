@@ -1,3 +1,4 @@
+/* Modified for Muse Passport community integration, 2026-10-04. */
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
@@ -15,6 +16,9 @@
  */
 
 #include "ble_server.h"
+#if CONFIG_MUSE_PHONE_BRIDGE
+#include "phone_bridge.h"
+#endif
 #include "stack_monitor.h"
 
 #include <string.h>
@@ -798,6 +802,9 @@ static int gap_event_cb(struct ble_gap_event *event, void *arg) {
     if (s_companion.on_gap_event && !s_shutting_down) {
         companion_rc = s_companion.on_gap_event(event);
     }
+    #if CONFIG_MUSE_PHONE_BRIDGE
+    if (!s_shutting_down) phone_bridge_gap_event(event);
+    #endif
     switch (event->type) {
         case BLE_GAP_EVENT_CONNECT:
             if (s_shutting_down) break;
@@ -966,6 +973,11 @@ void ble_server_start(const char *device_name, const ble_callbacks_t *cb) {
         rc = ble_gatts_add_svcs(s_companion.svcs);
         if (rc != 0) ESP_LOGE(TAG, "companion gatts_add_svcs rc=%d", rc);
     }
+#if CONFIG_MUSE_PHONE_BRIDGE
+    const struct ble_gatt_svc_def *bridge_svcs = phone_bridge_services();
+    ESP_ERROR_CHECK(ble_gatts_count_cfg(bridge_svcs));
+    ESP_ERROR_CHECK(ble_gatts_add_svcs(bridge_svcs));
+#endif
     if (s_companion.configure_host) s_companion.configure_host();
 
     ble_svc_gap_device_name_set(device_name);

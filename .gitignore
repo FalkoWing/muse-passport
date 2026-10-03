@@ -1,3 +1,4 @@
+# Modified for Muse Passport community integration, 2026-10-04.
 # OS
 .DS_Store
 Thumbs.db
@@ -20,3 +21,22 @@ build/
 .claude/
 # Interactive simulator screenshot.
 muse-simulator.ppm
+
+# Local planning, requirements and development journals (not public docs).
+.local/
+docs/local/
+docs/PASSPORT_MUSE_DEVELOPMENT_NOTES.md
+skills/folotoy-ai-passport-publisher/
+
+# Local credentials and diagnostic artifacts.
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.log
+
+# Private planning, notes and community submission materials.
+docs/

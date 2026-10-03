@@ -1,3 +1,4 @@
+/* Modified for Muse Passport community integration, 2026-10-04. */
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
@@ -15,6 +16,9 @@
  */
 
 #include "muse_glue.h"
+#if CONFIG_MUSE_PHONE_BRIDGE
+#include "phone_bridge.h"
+#endif
 
 #include <stdlib.h>
 #include <string.h>
@@ -168,6 +172,13 @@ static void set_fail(const char *why) {
 
 static void op_wifi_status(muse_wifi_status_t *out) {
     memset(out, 0, sizeof(*out));
+#if CONFIG_MUSE_PHONE_BRIDGE
+    if (config_is_provisioned()) {
+        out->state = MUSE_WIFI_OFF;
+        strlcpy(out->detail, "Through Android BLE", sizeof(out->detail));
+        return;
+    }
+#endif
     portENTER_CRITICAL(&s_lock);
     first_ssid_locked(out->ssid, sizeof(out->ssid));
     strlcpy(out->detail, s_fail, sizeof(out->detail));
@@ -393,10 +404,17 @@ static const muse_link_ops_t s_ops = {
     .hatch_vm = op_hatch_vm,
     .talk_press = op_talk_press,
     .reset_setup = op_reset_setup,
+#if CONFIG_MUSE_PHONE_BRIDGE
+    .req_ready = phone_bridge_ready,
+    .req_open = phone_bridge_open,
+    .req_send = phone_bridge_send,
+    .req_cancel = phone_bridge_cancel,
+#else
     .req_ready = noise_ctrl_is_connected,
     .req_open = noise_ctrl_req_open,
     .req_send = noise_ctrl_req_send,
     .req_cancel = noise_ctrl_req_cancel,
+#endif
     .power_save = noise_ctrl_set_power_save,
     .wifi_nap = op_wifi_nap,
     .wifi_saved = op_wifi_saved,
@@ -473,12 +491,16 @@ static void keeper_task(void *arg) {
     uint32_t pending = KEEP_BLE;
     bool napped = false;
     bool setup_done = config_setup_complete();
+    #if CONFIG_MUSE_PHONE_BRIDGE
+    muse_settings_set_ble_on(true);
+    #else
     if (setup_done && muse_settings_ble_on()) {
         // Registered devices boot with the phone companion off; the settings
         // switch turns it on until the next restart.
         ESP_LOGI(TAG, "registered; phone setup BLE off at boot");
         muse_settings_set_ble_on(false);
     }
+    #endif
     stack_monitor_t stack = STACK_MONITOR_INIT;
 
     for (;;) {
@@ -497,7 +519,11 @@ static void keeper_task(void *arg) {
             // Once registered the phone is done with BLE, so stop the
             // companion; the settings switch can turn it back on.
             bool done = config_setup_complete();
-            if (done && !setup_done && muse_settings_ble_on()) {
+            if (done && !setup_done && muse_settings_ble_on()
+#if CONFIG_MUSE_PHONE_BRIDGE
+                && false
+#endif
+            ) {
                 ESP_LOGI(TAG, "setup complete; turning phone setup BLE off");
                 muse_settings_set_ble_on(false);
                 pending |= KEEP_BLE;
@@ -519,7 +545,11 @@ static void keeper_task(void *arg) {
 
         bool have = s_ssid[0] != '\0';
         napped = napped && s_nap;
-        if (!muse_settings_wifi_on() || !have) {
+        bool phone_only = false;
+#if CONFIG_MUSE_PHONE_BRIDGE
+        phone_only = config_is_provisioned();
+#endif
+        if (phone_only || !muse_settings_wifi_on() || !have) {
             if (wifi_mgr_is_connected()) {
                 ESP_LOGI(TAG, "wifi %s; disconnecting", have ? "off" : "forgotten");
                 wifi_mgr_disconnect();
@@ -617,6 +647,9 @@ static void boot_task(void *arg) {
 
 void muse_glue_start(void) {
     s_ready = xEventGroupCreate();
+    #if CONFIG_MUSE_PHONE_BRIDGE
+    phone_bridge_init();
+    #endif
     muse_link_register(&s_ops);
     muse_ble_set_name(identity_ble_name());
     ble_companion_t companion = {

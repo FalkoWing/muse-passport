@@ -1,3 +1,4 @@
+# Modified for Muse Passport community integration, 2026-10-04.
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,7 +29,6 @@ if(CONFIG_MUSE_ENABLED)
         "muse_console.c"
         "muse_state.c"
         "muse_battery.c"
-        "muse_ui.c"
         "muse_audio.c"
         "muse_pmu.c"
         "muse_input.c"
@@ -42,6 +42,14 @@ if(CONFIG_MUSE_ENABLED)
         "muse_lv_mem.c"
         "muse_link.c"
         "muse_ble.c")
+    if(CONFIG_MUSE_BOARD_FOLOTOY_PASSPORT)
+        list(APPEND srcs "muse_ui_passport.c" "fonts/passport_font_16.c")
+    else()
+        list(APPEND srcs "muse_ui.c")
+    endif()
+    if(CONFIG_MUSE_PHONE_BRIDGE)
+        list(APPEND srcs "muse_passport_reader.c")
+    endif()
     if(CONFIG_MUSE_HATCH)
         list(APPEND srcs "muse_chat.c" "muse_account_api.c" "muse_chat_session.cpp")
         list(APPEND embed "test_reply.mp3")   # muse_hatch_mp3_selftest
@@ -66,6 +74,8 @@ if(CONFIG_MUSE_ENABLED)
         list(APPEND srcs "boards/board_aipi.c")
     elseif(CONFIG_MUSE_BOARD_WAVESHARE_C6_18)
         list(APPEND srcs "boards/board_waveshare_c6_18.c")
+    elseif(CONFIG_MUSE_BOARD_FOLOTOY_PASSPORT)
+        list(APPEND srcs "boards/board_folotoy_passport.c")
     elseif(CONFIG_MUSE_BOARD_SENSECAP_WATCHER)
         list(APPEND srcs "boards/board_sensecap_watcher.c" "boards/muse_lcd_bands.c")
         if(CONFIG_MUSE_WATCHER_CAMERA)
@@ -89,7 +99,7 @@ set(muse_priv_requires
     noise_core minimp3
     esp_lcd esp_adc esp_driver_i2s esp_driver_ledc esp_driver_spi esp_driver_uart esp_wifi
     esp_driver_pcnt)
-list(APPEND muse_priv_requires camera)
+list(APPEND muse_priv_requires camera passport_bsp)
 
 idf_component_register(
     SRCS ${srcs}

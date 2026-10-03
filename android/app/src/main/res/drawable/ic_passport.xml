@@ -1,0 +1,6 @@
+<!-- SPDX-License-Identifier: Apache-2.0. Original community app mark. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#EDE2FF" android:pathData="M35,30 L71,30 Q77,30 77,36 L77,67 Q77,73 71,73 L52,73 L40,82 L40,73 L35,73 Q29,73 29,67 L29,36 Q29,30 35,30 Z" />
+    <path android:fillColor="#7551BF" android:pathData="M44,42 Q47,42 47,45 L47,57 Q47,60 44,60 Q41,60 41,57 L41,45 Q41,42 44,42 Z M54,38 Q57,38 57,41 L57,61 Q57,64 54,64 Q51,64 51,61 L51,41 Q51,38 54,38 Z M64,42 Q67,42 67,45 L67,57 Q67,60 64,60 Q61,60 61,57 L61,45 Q61,42 64,42 Z" />
+    <path android:fillColor="#AEEDCE" android:pathData="M75,22 L77,28 L83,30 L77,32 L75,38 L73,32 L67,30 L73,28 Z" />
+</vector>

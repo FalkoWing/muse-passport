@@ -1,3 +1,4 @@
+# Modified for Muse Passport community integration, 2026-10-04.
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,6 +20,7 @@ set(GADGET_SRCS
     "wifi_mgr.c"
     "wifi_known.c"
     "identity.c"
+    "sdk_token_store.c"
     "config_store.c"
     "vm_api.c"
     "diagnostic_log.c"
@@ -86,6 +88,10 @@ endif()
 
 if(CONFIG_HOMEHUB_SENSECAP_SENSORS)
     list(APPEND GADGET_SRCS "sensecap_sensors.c")
+endif()
+
+if(CONFIG_MUSE_PHONE_BRIDGE)
+    list(APPEND GADGET_SRCS "phone_bridge.c")
 endif()
 
 if(CONFIG_HOMEHUB_VOICE)

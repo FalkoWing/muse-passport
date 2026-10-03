@@ -1,3 +1,4 @@
+/* Modified for Muse Passport community integration, 2026-10-04. */
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
@@ -46,6 +47,9 @@
 #include "freertos/task.h"
 
 #include "muse_link.h"
+#include "muse_text.h"
+#include "muse_locale.h"
+#include "muse_passport_reader.h"
 #include "muse_wifi.h"
 
 static const char *TAG = "muse_chat_link";
@@ -57,7 +61,11 @@ static const char *TAG = "muse_chat_link";
 #define ROW_MAX 12288                   /* a history page split across frames, gathered */
 #define TEXT_MAX 1024                   /* reply text kept for the captions */
 #define EV_TEXT 72
+#if CONFIG_MUSE_PHONE_BRIDGE
+#define SEND_WAIT_MS 3000
+#else
 #define SEND_WAIT_MS 200               /* the press queues the pre-roll all at once */
+#endif
 #define POLL_US 500000                  /* between history polls while nothing's new */
 #define SETTLE_US 3000000               /* quiet after a reply before the turn ends */
 #define REPLY_TIMEOUT_US 60000000
@@ -160,6 +168,7 @@ static bool read_string(scan_t *s, char *out, size_t cap)
         return false;
     }
     size_t n = 0;
+    bool full = false;
     for (s->p++; s->p < s->end && *s->p != '"'; s->p++) {
         char buf[4];
         size_t len = 1;
@@ -203,9 +212,20 @@ static bool read_string(scan_t *s, char *out, size_t cap)
             default: buf[0] = *s->p; break;   /* \" \\ \/ */
             }
         }
-        if (out && n + len < cap) {
-            memcpy(out + n, buf, len);
-            n += len;
+        if ((unsigned char)buf[0] >= 0xC0 && len == 1) {
+            len = (unsigned char)buf[0] >= 0xF0 ? 4 : (unsigned char)buf[0] >= 0xE0 ? 3 : 2;
+            if ((size_t)(s->end - s->p) < len) return false;
+            for (size_t i = 1; i < len; i++) {
+                if (((unsigned char)s->p[i] & 0xC0) != 0x80) return false;
+                buf[i] = s->p[i];
+            }
+            s->p += len - 1;
+        }
+        if (out && !full) {
+            if (n + len < cap) {
+                memcpy(out + n, buf, len);
+                n += len;
+            } else full = true;
         }
     }
     if (out && cap) {
@@ -467,6 +487,7 @@ static void emit(muse_hatch_ev_t type, const char *text)
 {
     ev_t ev = { .type = type };
     strlcpy(ev.text, text ? text : "", sizeof(ev.text));
+    muse_text_trim_utf8(ev.text);
     xQueueSend(s_events, &ev, 0);
 }
 
@@ -492,6 +513,7 @@ static void fail(const char *why)
 /* ---- The note ---- */
 
 /* Sends the staged PCM as one body chunk; whole chunks are a multiple of 3 bytes, so only the last pads. */
+#if !CONFIG_MUSE_PHONE_BRIDGE
 static bool send_stage(bool last)
 {
     size_t n = muse_hatch_base64(s_turn.stage, s_turn.stage_len, (char *)s_turn.chunk);
@@ -503,17 +525,22 @@ static bool send_stage(bool last)
     return muse_link_req_send(s_stream[RX_NOTE], s_turn.chunk, n, last, SEND_WAIT_MS);
 }
 
+#endif
+
 /* ---- The reply ---- */
 
 /* The chat's newest row (none yet: the mark) or the next one after it. */
 static bool poll_row(void)
 {
-    char path[64];
+    char path[96];
     if (s_turn.marked) {
         snprintf(path, sizeof(path), "/chat/history?limit=1&after_seq=%" PRIu64, s_turn.after);
     } else {
         strlcpy(path, "/chat/history?limit=1", sizeof(path));
     }
+#if CONFIG_MUSE_PHONE_BRIDGE
+    strlcat(path, "&caption=1", sizeof(path));
+#endif
     return request(RX_ROW, "GET", path, false, true);
 }
 
@@ -522,7 +549,7 @@ static void on_ack(void)
     rx_t *rx = &s_rx[RX_NOTE];
     if (rx->status != 200) {
         ESP_LOGW(TAG, "chat/stream: %d %.120s", rx->status, rx->body);
-        fail(rx->status < 0 ? "LOST CONNECTION TO MUSE" : "MUSE DIDN'T TAKE IT");
+        fail(rx->status < 0 ? MUSE_UI_TEXT("LOST CONNECTION TO MUSE", "Muse 连接已断开") : MUSE_UI_TEXT("MUSE DIDN'T TAKE IT", "语音发送失败，请重试"));
         return;
     }
     cJSON *root = cJSON_Parse(rx->body);
@@ -532,11 +559,12 @@ static void on_ack(void)
     cJSON_Delete(root);
     if (!s_turn.note_id[0]) {
         ESP_LOGW(TAG, "chat/stream ack without a message id: %.120s", rx->body);
-        fail("MUSE DIDN'T TAKE IT");
+        fail(MUSE_UI_TEXT("MUSE DIDN'T TAKE IT", "语音发送失败，请重试"));
         return;
     }
     ESP_LOGI(TAG, "note %s sent; ack after %.2fs", s_turn.note_id, (esp_timer_get_time() - s_turn.t_end) / 1e6);
     s_turn.phase = T_REPLY;
+    muse_passport_reader_note(s_turn.note_id);
 }
 
 /* Handles the row just read; returns true to move past it. */
@@ -572,6 +600,7 @@ static bool on_row(const row_t *r)
     if (r->text[0]) {
         size_t len = strlen(s_turn.text);
         snprintf(s_turn.text + len, sizeof(s_turn.text) - len, "%s%s", len ? " " : "", r->text);
+        muse_text_trim_utf8(s_turn.text);
         ESP_LOGI(TAG, "reply after %.2fs: %.80s", (esp_timer_get_time() - s_turn.t_end) / 1e6, r->text);
         if (!s_turn.replied) {
             s_turn.t_show = esp_timer_get_time();
@@ -591,7 +620,7 @@ static void on_page(void)
     if (rx->status != 200) {
         ESP_LOGW(TAG, "chat/history: %d", rx->status);
         if (rx->status < 0) {
-            fail("LOST CONNECTION TO MUSE");
+            fail(MUSE_UI_TEXT("LOST CONNECTION TO MUSE", "Muse 连接已断开"));
         }
         return;
     }
@@ -642,22 +671,28 @@ static void pump(void)
     }
     if (s_turn.phase != T_REPLY) {
         if (s_turn.phase == T_ACK && now - s_turn.t_end > REPLY_TIMEOUT_US) {
-            fail("NO REPLY FROM MUSE");
+            fail(MUSE_UI_TEXT("NO REPLY FROM MUSE", "Muse 暂未回复，请重试"));
         }
         return;
     }
     if (!s_stream[RX_ROW] && now >= s_turn.t_poll && !poll_row()) {
-        fail("LOST CONNECTION TO MUSE");
+        fail(MUSE_UI_TEXT("LOST CONNECTION TO MUSE", "Muse 连接已断开"));
         return;
     }
     if (s_turn.replied) {
-        if (scroll(now) && now - s_turn.t_reply > SETTLE_US) {
+        if (
+#if CONFIG_MUSE_PHONE_BRIDGE
+            (scroll(now), true)
+#else
+            scroll(now)
+#endif
+            && now - s_turn.t_reply > SETTLE_US) {
             ESP_LOGI(TAG, "reply done: %u chars", (unsigned)strlen(s_turn.text));
             end_turn();
             emit(MUSE_HATCH_EV_DONE, NULL);
         }
     } else if (now - s_turn.t_end > REPLY_TIMEOUT_US) {
-        fail(s_turn.skipped_big ? "REPLY TOO LONG" : "NO REPLY FROM MUSE");
+        fail(s_turn.skipped_big ? MUSE_UI_TEXT("REPLY TOO LONG", "回复过长，请查看手机") : MUSE_UI_TEXT("NO REPLY FROM MUSE", "Muse 暂未回复，请重试"));
     }
 }
 
@@ -670,6 +705,7 @@ void muse_hatch_start(void)
     static char ack[ACK_MAX];
     s_rx[RX_NOTE].body = ack;
     s_rx[RX_NOTE].cap = sizeof(ack);
+    muse_passport_reader_start();
 }
 
 void muse_hatch_status(muse_hatch_status_t *out)
@@ -677,6 +713,14 @@ void muse_hatch_status(muse_hatch_status_t *out)
     if (!muse_link_hatch_linked()) {
         out->state = MUSE_HATCH_NOT_SET;
         strlcpy(out->detail, "Pair in the Muse app", sizeof(out->detail));
+    } else if (muse_link_req_ready()) {
+        out->state = MUSE_HATCH_REACHABLE;
+        strlcpy(out->detail, "Muse connected", sizeof(out->detail));
+#if CONFIG_MUSE_PHONE_BRIDGE
+    } else {
+        out->state = MUSE_HATCH_TESTING;
+        strlcpy(out->detail, "Connect Android bridge", sizeof(out->detail));
+#else
     } else if (!muse_wifi_connected()) {
         out->state = MUSE_HATCH_OFFLINE;
         strlcpy(out->detail, "Waiting for Wi-Fi", sizeof(out->detail));
@@ -686,6 +730,7 @@ void muse_hatch_status(muse_hatch_status_t *out)
     } else {
         out->state = MUSE_HATCH_TESTING;
         strlcpy(out->detail, "Connecting...", sizeof(out->detail));
+#endif
     }
 }
 
@@ -709,7 +754,7 @@ const char *muse_hatch_state_name(muse_hatch_state_t state)
     case MUSE_HATCH_OFFLINE: return "Offline";
     case MUSE_HATCH_UNTESTED: return "Saved";
     case MUSE_HATCH_TESTING: return "Connecting";
-    case MUSE_HATCH_REACHABLE: return "Connected";
+    case MUSE_HATCH_REACHABLE: return MUSE_UI_TEXT("Connected", "已连接");
     case MUSE_HATCH_UNREACHABLE: return "Can't connect";
     }
     return "";
@@ -717,32 +762,47 @@ const char *muse_hatch_state_name(muse_hatch_state_t state)
 
 bool muse_hatch_ready(void)
 {
-    return s_events && muse_link_hatch_linked() && muse_wifi_connected() && muse_link_req_ready();
+    return s_events && muse_link_hatch_linked() && muse_link_req_ready();
 }
 
 void muse_hatch_turn_begin(void)
 {
+    muse_passport_reader_reset();
     end_turn();
     xQueueReset(s_events);
     memset(&s_turn, 0, sizeof(s_turn));
+#if CONFIG_MUSE_PHONE_BRIDGE
+    /* The phone constructs the WAV/base64. req_send queues compressed audio
+     * without ever waiting for a radio ACK on the microphone task. */
+    if (!request(RX_NOTE, "POST", "/chat/stream", true, false)) {
+        fail(MUSE_UI_TEXT("CAN'T REACH MUSE", "暂时无法连接 Muse"));
+        return;
+    }
+#else
     s_turn.stage = malloc(STAGE_BYTES);
     s_turn.chunk = malloc(CHUNK_BYTES + sizeof(MUSE_HATCH_NOTE_TAIL));
     if (!s_turn.stage || !s_turn.chunk) {
-        fail("OUT OF MEMORY");
+        fail(MUSE_UI_TEXT("OUT OF MEMORY", "内存不足，请重试"));
         return;
     }
     if (!request(RX_NOTE, "POST", "/chat/stream", true, false)
         || !muse_link_req_send(s_stream[RX_NOTE], MUSE_HATCH_NOTE_HEAD, sizeof(MUSE_HATCH_NOTE_HEAD) - 1, false, SEND_WAIT_MS)) {
-        fail("CAN'T REACH MUSE");
+        fail(MUSE_UI_TEXT("CAN'T REACH MUSE", "暂时无法连接 Muse"));
         return;
     }
     muse_hatch_wav_header(s_turn.stage, MIC_RATE);
     s_turn.stage_len = MUSE_HATCH_WAV_HEADER;
+#endif
     s_turn.phase = T_TALKING;
 }
 
 void muse_hatch_turn_audio(const int16_t *pcm, size_t frames)
 {
+#if CONFIG_MUSE_PHONE_BRIDGE
+    if (s_turn.phase == T_TALKING && !muse_link_req_send(s_stream[RX_NOTE], pcm, frames * 2, false, 0)) {
+        fail(MUSE_UI_TEXT("AUDIO QUEUE FULL", "语音传输繁忙，请重试"));
+    }
+#else
     const uint8_t *p = (const uint8_t *)pcm;
     size_t n = frames * 2;
     while (s_turn.phase == T_TALKING && n) {
@@ -752,20 +812,26 @@ void muse_hatch_turn_audio(const int16_t *pcm, size_t frames)
         p += take;
         n -= take;
         if (s_turn.stage_len == STAGE_BYTES && !send_stage(false)) {
-            fail("CAN'T KEEP UP");
+            fail(MUSE_UI_TEXT("CAN'T KEEP UP", "语音传输中断，请重试"));
         }
     }
+#endif
 }
 
 void muse_hatch_turn_end(void)
 {
     if (s_turn.phase != T_TALKING) {
         /* Failed while recording: that error went to the recording caption. */
-        emit(MUSE_HATCH_EV_ERROR, s_turn.error[0] ? s_turn.error : "CAN'T REACH MUSE");
+        emit(MUSE_HATCH_EV_ERROR, s_turn.error[0] ? s_turn.error : MUSE_UI_TEXT("CAN'T REACH MUSE", "暂时无法连接 Muse"));
         return;
     }
-    if (!send_stage(true)) {
-        fail("CAN'T KEEP UP");
+#if CONFIG_MUSE_PHONE_BRIDGE
+    bool sent = muse_link_req_send(s_stream[RX_NOTE], NULL, 0, true, 0);
+#else
+    bool sent = send_stage(true);
+#endif
+    if (!sent) {
+        fail(MUSE_UI_TEXT("CAN'T KEEP UP", "语音传输中断，请重试"));
         return;
     }
     free(s_turn.stage);
@@ -780,7 +846,7 @@ void muse_hatch_turn_end(void)
      * adds this note's row only after transcribing it, so none is missed.
      */
     if (!poll_row()) {
-        fail("LOST CONNECTION TO MUSE");
+        fail(MUSE_UI_TEXT("LOST CONNECTION TO MUSE", "Muse 连接已断开"));
     }
 }
 
@@ -798,6 +864,7 @@ muse_hatch_ev_t muse_hatch_turn_event(char *text, size_t cap)
         return MUSE_HATCH_EV_NONE;
     }
     strlcpy(text, ev.text, cap);
+    muse_text_trim_utf8(text);
     return ev.type;
 }
 

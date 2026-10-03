@@ -1,3 +1,4 @@
+/* Modified for Muse Passport community integration, 2026-10-04. */
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
@@ -191,6 +192,17 @@ int muse_text_ascii(const char *s, size_t *len, char out[4])
     }
     strlcpy(out, a, 4);
     return (int)strlen(out);
+}
+
+void muse_text_trim_utf8(char *text)
+{
+    size_t n = strlen(text);
+    if (!n) return;
+    size_t start = n - 1;
+    while (start && ((unsigned char)text[start] & 0xC0) == 0x80) start--;
+    unsigned char c = text[start];
+    size_t width = c >= 0xF0 ? 4 : c >= 0xE0 ? 3 : c >= 0xC0 ? 2 : 1;
+    if (n - start < width || (c >= 0x80 && c < 0xC0)) text[start] = 0;
 }
 
 void muse_text_to_ascii(char *s, size_t cap)

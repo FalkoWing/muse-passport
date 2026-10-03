@@ -1,3 +1,4 @@
+/* Modified for Muse Passport community integration, 2026-10-04. */
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
@@ -41,6 +42,7 @@ extern "C" {
 #define MUSE_BTN_TALK_RELEASE (1u << 1)
 #define MUSE_BTN_AUX_PRESS    (1u << 2)
 #define MUSE_BTN_AUX_RELEASE  (1u << 3)
+#define MUSE_BTN_PREV_PRESS   (1u << 4)
 
 /* Where a button's icon goes on screen: beside the button, inside the panel. */
 typedef struct {

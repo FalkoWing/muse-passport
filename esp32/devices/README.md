@@ -1,3 +1,4 @@
+<!-- Modified for Muse Passport community integration, 2026-10-04. -->
 <!--
 Copyright (c) Meta Platforms, Inc. and affiliates.
 
@@ -30,6 +31,7 @@ session to Muse. The rest depends on the hardware.
 | Board | Chip | Display | Flash / PSRAM | Reference | Buy |
 |---|---|---|---|---|---|
 | **ESP32-C5 DevKitC-1** | ESP32-C5 | None (RGB status light) | 8 MB / 8 MB | [Espressif docs](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32c5/esp32-c5-devkitc-1/index.html) | [DigiKey](https://www.digikey.com/en/products/result?keywords=ESP32-C5-DevKitC-1) |
+| **FoloToy AI Passport (experimental; boot-tested, pairing pending)** | ESP32-C3 | 240×320 LCD | 8 MB / none | [FoloToy source](https://gitee.com/FoloToy/ai-passport) | — |
 | **ideaspark ESP32 with 1.9" display** | ESP32 | 1.9" 170×320 LCD | 16 MB / none | — | [Amazon](https://www.amazon.com/s?k=ideaspark+ESP32+1.9+inch+ST7789) |
 | **Seeed SenseCAP Indicator** | ESP32-S3 | 4" 480×480 LCD | 8 MB / 8 MB | [Seeed wiki](https://wiki.seeedstudio.com/SenseCAP_Indicator_Get_Started/) | [Seeed Studio](https://www.seeedstudio.com/SenseCAP-Indicator-D1-p-5643.html) |
 | **Seeed reTerminal E1001** | ESP32-S3 | 7.5" 800×480 black and white e-paper | 32 MB / 8 MB | [Seeed wiki](https://wiki.seeedstudio.com/getting_started_with_reterminal_e1001/) | [Seeed Studio](https://www.seeedstudio.com/reTerminal-E1001-p-6534.html) |
@@ -42,21 +44,26 @@ session to Muse. The rest depends on the hardware.
 | **M5Stack StickS3** | ESP32-S3 | 1.14" 135×240 LCD | 8 MB / 8 MB | [M5Stack docs](https://docs.m5stack.com/en/core/StickS3), [M5Unified](https://github.com/m5stack/M5Unified) | [M5Stack](https://shop.m5stack.com/products/m5sticks3-esp32s3-mini-iot-dev-kit) |
 | **M5Stack StickC Plus2** | ESP32 | 1.14" 135×240 LCD | 8 MB / 2 MB | [M5Stack docs](https://docs.m5stack.com/en/core/M5StickC%20PLUS2), [M5Unified](https://github.com/m5stack/M5Unified) | [M5Stack](https://shop.m5stack.com/products/m5stickc-plus2-esp32-mini-iot-development-kit) (end of life) |
 
+Experimental port: **FoloToy AI Passport** (ESP32-C3, 240×320 ST7789,
+8 MB flash, no PSRAM), [vendor source](https://gitee.com/FoloToy/ai-passport).
+Build and first-device startup checks pass; pairing and message delivery remain unverified. See the
+[configuration and validation guide](FOLOTOY_PASSPORT.md).
+
 ## Features
 
-| | DevKitC-1 | ideaspark | SenseCAP Indicator | reTerminal E1001 | HA Voice PE | Waveshare S3 1.75C | Waveshare S3 1.75 | AIPI Lite | Waveshare C6 1.8 | Watcher | StickS3 | StickC Plus2 |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-| Home-network tunnel | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ |
-| Shows status on | Light | Screen | Screen | E-paper | Light ring | Avatar | Avatar | Avatar | Avatar | Avatar | Avatar | Avatar |
-| Images from Muse | — | ✅ | ✅ | Black and white | — | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ |
-| UI and settings | — | — | — | — | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Push-to-talk | — | — | — | — | ✅ | ✅ | ✅ | ✅ | Text replies | ✅ | ✅ | ✅ |
-| Speaker and mic | — | — | — | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Buzzer and mic |
-| Air sensors | — | — | D1S, D1Pro | — | — | — | — | — | — | — | — | — |
-| Touch | — | — | — | — | — | ✅ | ✅ | — | ✅ | ✅ | — | — |
-| Battery status | — | — | — | — | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Voltage only |
-| Over-the-air updates | Off | Off | Off | Off | Off | On | On | On | On | On | On | On |
-| Buttons | BOOT | BOOT | Top | Green | Centre (talk), dial | PWR (talk), BOOT | BOOT (talk), PWR | Two | BOOT (talk), PWR | Wheel (press to talk, turn to sleep) | Front (talk), side (menu), PWR | Front (talk), side (menu), PWR |
+| | DevKitC-1 | ideaspark | SenseCAP Indicator | reTerminal E1001 | HA Voice PE | Waveshare S3 1.75C | Waveshare S3 1.75 | AIPI Lite | Waveshare C6 1.8 | Watcher | StickS3 | StickC Plus2 | Passport (experimental) |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:| :-: |
+| Home-network tunnel | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ | — |
+| Shows status on | Light | Screen | Screen | E-paper | Light ring | Avatar | Avatar | Avatar | Avatar | Avatar | Avatar | Avatar | Simple portrait UI |
+| Images from Muse | — | ✅ | ✅ | Black and white | — | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ | — |
+| UI and settings | — | — | — | — | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Yes |
+| Push-to-talk | — | — | — | — | ✅ | ✅ | ✅ | ✅ | Text replies | ✅ | ✅ | ✅ | Text replies |
+| Speaker and mic | — | — | — | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Buzzer and mic | Mic; speaker driver only |
+| Air sensors | — | — | D1S, D1Pro | — | — | — | — | — | — | — | — | — | — |
+| Touch | — | — | — | — | — | ✅ | ✅ | — | ✅ | ✅ | — | — | — |
+| Battery status | — | — | — | — | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Voltage only | Gauge (unverified) |
+| Over-the-air updates | Off | Off | Off | Off | Off | On | On | On | On | On | On | On | Off |
+| Buttons | BOOT | BOOT | Top | Green | Centre (talk), dial | PWR (talk), BOOT | BOOT (talk), PWR | Two | BOOT (talk), PWR | Wheel (press to talk, turn to sleep) | Front (talk), side (menu), PWR | Front (talk), side (menu), PWR | OK (talk), DOWN (menu), UP (face) |
 
 Boards without PSRAM (the ideaspark and the Waveshare C6) don't have room for
 the home-network tunnel. Muse can still reach and control them once the
@@ -171,6 +178,7 @@ board's overlays, in order:
 | Board | Target | Overlays after `sdkconfig.defaults` | Build |
 |---|---|---|---|
 | ESP32-C5 DevKitC-1 | `esp32c5` | none | `idf.py build` |
+| FoloToy AI Passport (experimental) | `esp32c3` | [`devices/sdkconfig.muse`](sdkconfig.muse), [`devices/sdkconfig.muse-folotoy-passport`](sdkconfig.muse-folotoy-passport) | `tools/passport.sh build` |
 | ideaspark ESP32 | `esp32` | [`devices/sdkconfig.ideaspark`](sdkconfig.ideaspark) | `tools/board.sh ideaspark build` |
 | Seeed SenseCAP Indicator | `esp32s3` | [`devices/sdkconfig.sensecap-indicator`](sdkconfig.sensecap-indicator) | `tools/board.sh sensecap-indicator build` |
 | Seeed reTerminal E1001 | `esp32s3` | [`devices/sdkconfig.reterminal-e1001`](sdkconfig.reterminal-e1001) | `tools/board.sh reterminal-e1001 build` |
@@ -194,7 +202,7 @@ idf.py -B build-muse-aipi -DIDF_TARGET=esp32s3 \
 ```
 
 To flash, add `-p PORT flash` with the same arguments. Boards with the full UI need 16 MB
-of flash or more, except the StickS3 and StickC Plus2, whose overlays switch
+of flash or more, except the StickS3, StickC Plus2 and experimental Passport, whose overlays switch
 to the 8 MB layout in [`partitions_muse_8mb.csv`](../partitions_muse_8mb.csv).
 [`AGENTS.md`](../AGENTS.md) covers flashing, monitoring, and what to do when a
 build picks up stale settings.

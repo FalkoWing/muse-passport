@@ -1,3 +1,4 @@
+/* Modified for Muse Passport community integration, 2026-10-04. */
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
@@ -33,6 +34,7 @@
 #include "muse_link.h"
 #include "muse_settings.h"
 #include "muse_state.h"
+#include "muse_locale.h"
 #include "muse_text.h"
 #include "muse_voice.h"
 #include "muse_wifi.h"
@@ -79,36 +81,36 @@ typedef enum {
 } item_t;
 
 static const char *const ITEM_NAMES[ITEM_COUNT] = {
-    [ITEM_VOLUME] = "Volume",
-    [ITEM_SPEAKER] = "Speaker",
-    [ITEM_BRIGHTNESS] = "Brightness",
-    [ITEM_MIC] = "Mic gain",
-    [ITEM_SLEEP] = "Auto-sleep",
-    [ITEM_PHONE] = "Phone setup",
+    [ITEM_VOLUME] = MUSE_UI_TEXT("Volume", "提示音量"),
+    [ITEM_SPEAKER] = MUSE_UI_TEXT("Speaker", "扬声器"),
+    [ITEM_BRIGHTNESS] = MUSE_UI_TEXT("Brightness", "屏幕亮度"),
+    [ITEM_MIC] = MUSE_UI_TEXT("Mic gain", "麦克风增益"),
+    [ITEM_SLEEP] = MUSE_UI_TEXT("Auto-sleep", "自动熄屏"),
+    [ITEM_PHONE] = MUSE_UI_TEXT("Phone setup", "蓝牙设置"),
     [ITEM_WIFI] = "Wi-Fi",
-    [ITEM_INFO] = "Status",
-    [ITEM_BATTERY] = "Battery",
-    [ITEM_RESET] = "Reset pairing",
-    [ITEM_SLEEP_NOW] = "Screen off",
-    [ITEM_POWER] = "Power off",
-    [ITEM_CLOSE] = "Close menu",
+    [ITEM_INFO] = MUSE_UI_TEXT("Status", "连接状态"),
+    [ITEM_BATTERY] = MUSE_UI_TEXT("Battery", "电池"),
+    [ITEM_RESET] = MUSE_UI_TEXT("Reset pairing", "重置配对"),
+    [ITEM_SLEEP_NOW] = MUSE_UI_TEXT("Screen off", "立即熄屏"),
+    [ITEM_POWER] = MUSE_UI_TEXT("Power off", "关机"),
+    [ITEM_CLOSE] = MUSE_UI_TEXT("Close menu", "关闭设置"),
 };
 
 /* What the talk button does on each row. */
 static const char *const ITEM_ACTIONS[ITEM_COUNT] = {
-    [ITEM_VOLUME] = "Change",
-    [ITEM_SPEAKER] = "Toggle",
-    [ITEM_BRIGHTNESS] = "Change",
-    [ITEM_MIC] = "Change",
-    [ITEM_SLEEP] = "Change",
-    [ITEM_PHONE] = "Toggle",
-    [ITEM_WIFI] = "Toggle",
-    [ITEM_INFO] = "Open",
-    [ITEM_BATTERY] = "Open",
-    [ITEM_RESET] = "Select",
-    [ITEM_SLEEP_NOW] = "Select",
-    [ITEM_POWER] = "Select",
-    [ITEM_CLOSE] = "Close",
+    [ITEM_VOLUME] = MUSE_UI_TEXT("Change", "调整"),
+    [ITEM_SPEAKER] = MUSE_UI_TEXT("Toggle", "切换"),
+    [ITEM_BRIGHTNESS] = MUSE_UI_TEXT("Change", "调整"),
+    [ITEM_MIC] = MUSE_UI_TEXT("Change", "调整"),
+    [ITEM_SLEEP] = MUSE_UI_TEXT("Change", "调整"),
+    [ITEM_PHONE] = MUSE_UI_TEXT("Toggle", "切换"),
+    [ITEM_WIFI] = MUSE_UI_TEXT("Toggle", "切换"),
+    [ITEM_INFO] = MUSE_UI_TEXT("Open", "查看"),
+    [ITEM_BATTERY] = MUSE_UI_TEXT("Open", "查看"),
+    [ITEM_RESET] = MUSE_UI_TEXT("Select", "确认"),
+    [ITEM_SLEEP_NOW] = MUSE_UI_TEXT("Select", "确认"),
+    [ITEM_POWER] = MUSE_UI_TEXT("Select", "确认"),
+    [ITEM_CLOSE] = MUSE_UI_TEXT("Close", "关闭"),
 };
 
 /* Ascending; Select moves to the next one and wraps. */
@@ -116,7 +118,7 @@ static const int VOLUME_STEPS[] = { 10, 25, 40, 55, 70, 85, 100 };
 static const int BRIGHT_STEPS[] = { 10, 25, 50, 75, 100 };
 static const int GAIN_STEPS[] = { 0, 6, 12, 18, 24, 30, 36 };
 static const int SLEEP_STEPS[] = { 0, 30, 60, 120, 300, 600 };
-static const char *const SLEEP_NAMES[] = { "Never", "30 s", "1 min", "2 min", "5 min", "10 min" };
+static const char *const SLEEP_NAMES[] = { MUSE_UI_TEXT("Never", "不熄屏"), MUSE_UI_TEXT("30 s", "30 秒"), MUSE_UI_TEXT("1 min", "1 分钟"), MUSE_UI_TEXT("2 min", "2 分钟"), MUSE_UI_TEXT("5 min", "5 分钟"), MUSE_UI_TEXT("10 min", "10 分钟") };
 #define COUNT(a) ((int)(sizeof(a) / sizeof((a)[0])))
 
 typedef enum {
@@ -133,6 +135,7 @@ static volatile bool s_open;
 static view_t s_view;
 static int s_sel;
 static int s_shown_sel = -1;
+static int s_item_row[ITEM_COUNT];
 static int s_first;             /* top visible row */
 static int s_visible_rows;
 static int s_row_h;
@@ -182,12 +185,12 @@ static const char *sleep_name(int secs)
             return SLEEP_NAMES[i];
         }
     }
-    return "Custom";
+    return MUSE_UI_TEXT("Custom", "自定义");
 }
 
 static void value_text(int item, char *buf, size_t n)
 {
-    static const char *const WIFI_VALUES[] = { "Off", "Not set", "Joining", "On", "Failed", "Not found" };
+    static const char *const WIFI_VALUES[] = { MUSE_UI_TEXT("Off", "关闭"), MUSE_UI_TEXT("Not set", "未设置"), MUSE_UI_TEXT("Joining", "连接中"), MUSE_UI_TEXT("On", "开启"), MUSE_UI_TEXT("Failed", "连接失败"), MUSE_UI_TEXT("Not found", "未找到") };
     muse_wifi_status_t w;
     muse_power_t p;
 
@@ -196,7 +199,7 @@ static void value_text(int item, char *buf, size_t n)
         snprintf(buf, n, "%d%%", muse_settings_volume());
         break;
     case ITEM_SPEAKER:
-        strlcpy(buf, muse_settings_speaker_on() ? "On" : "Off", n);
+        strlcpy(buf, muse_settings_speaker_on() ? MUSE_UI_TEXT("On", "开启") : MUSE_UI_TEXT("Off", "关闭"), n);
         break;
     case ITEM_BRIGHTNESS:
         snprintf(buf, n, "%d%%", muse_settings_brightness());
@@ -208,7 +211,7 @@ static void value_text(int item, char *buf, size_t n)
         strlcpy(buf, sleep_name(muse_settings_sleep_s()), n);
         break;
     case ITEM_PHONE:
-        strlcpy(buf, muse_settings_ble_on() ? "On" : "Off", n);
+        strlcpy(buf, muse_settings_ble_on() ? MUSE_UI_TEXT("On", "开启") : MUSE_UI_TEXT("Off", "关闭"), n);
         break;
     case ITEM_WIFI:
         muse_wifi_status(&w);
@@ -238,16 +241,23 @@ static void status_text(char *buf, size_t n)
     muse_ble_status(&b);
     muse_power_t p = muse_state_power();
 
+#if CONFIG_MUSE_PHONE_BRIDGE
+    const char *ble = b.state == MUSE_BLE_CONNECTED ? "已连接" : "未连接";
+    const char *muse = muse_link_req_ready() ? "已连接" : "未连接";
+    snprintf(buf, n, "蓝牙：%s\nMuse：%s\n电量：%d%%\n版本：%s",
+             ble, muse, p.battery_pct, esp_app_get_description()->version);
+#else
     char batt[16] = "USB";
     if (p.battery_pct >= 0) {
         snprintf(batt, sizeof(batt), "%d%%%s", p.battery_pct, p.charging ? " +" : "");
     }
-    const char *phone = b.state == MUSE_BLE_OFF ? "Off" : (b.state == MUSE_BLE_CONNECTED ? "Connected" : b.name);
+    const char *phone = b.state == MUSE_BLE_OFF ? MUSE_UI_TEXT("Off", "关闭") : (b.state == MUSE_BLE_CONNECTED ? MUSE_UI_TEXT("Connected", "已连接") : b.name);
     snprintf(buf, n, "Wi-Fi %s\nIP    %s\nLink  %s\nMuse  %s\nPhone %s\nPower %s\nVer   %s",
              w.state == MUSE_WIFI_CONNECTED ? w.ssid : (w.state == MUSE_WIFI_OFF ? "off" : "offline"),
              w.state == MUSE_WIFI_CONNECTED ? w.ip : "-", muse_link_state_name(muse_link_state()),
              muse_hatch_state_name(h.state), phone, batt,
              esp_app_get_description()->version);
+#endif
     muse_text_to_ascii(buf, n);   /* network and phone names can have curly quotes */
 }
 
@@ -266,7 +276,7 @@ static void battery_text(char *buf, size_t n)
     muse_battery_t b;
     muse_battery_read(&b);
     if (!b.started) {
-        strlcpy(buf, "Unplug USB to\nmeasure how\nlong the\nbattery lasts.", n);
+        strlcpy(buf, MUSE_UI_TEXT("Unplug USB to\nmeasure how\nlong the\nbattery lasts.", "拔下 USB 后\n可记录电池续航。"), n);
         return;
     }
     char t[24], rate[24] = "-", full[24] = "-", wakes[24] = "-", off[24], slept[24], busy[24];
@@ -287,27 +297,30 @@ static void battery_text(char *buf, size_t n)
     pm_text(off, b.screen_off_pm);
     pm_text(slept, b.slept_pm);
     pm_text(busy, b.busy_pm);
-    snprintf(buf, n, "%s %s\nBatt  %d>%d%%\nRate  %s\nFull  %s\nOff   %s\nSleep %s\nWakes %s\nBusy  %s",
-             b.running ? "On batt" : "Last run", t, b.pct_start, b.pct_now, rate, full, off, slept, wakes, busy);
+    snprintf(buf, n, MUSE_UI_TEXT("%s %s\nBatt  %d>%d%%\nRate  %s\nFull  %s\nOff   %s\nSleep %s\nWakes %s\nBusy  %s", "%s %s\n电量 %d>%d%%\n耗电 %s\n续航 %s\n熄屏 %s\n休眠 %s\n唤醒 %s\n忙碌 %s"),
+             b.running ? MUSE_UI_TEXT("On batt", "电池供电") : MUSE_UI_TEXT("Last run", "上次记录"), t, b.pct_start, b.pct_now, rate, full, off, slept, wakes, busy);
 }
 
 static void refresh(void)
 {
-    char buf[160];
+    char buf[256];
     if (s_view == VIEW_LIST) {
         for (int i = 0; i < ITEM_COUNT; i++) {
+            if (!s_rows[i]) continue;
             value_text(i, buf, sizeof(buf));
             set_text(s_values[i], buf);
         }
         if (s_sel != s_shown_sel) {
             for (int i = 0; i < ITEM_COUNT; i++) {
+                if (!s_rows[i]) continue;
                 lv_obj_set_style_bg_opa(s_rows[i], i == s_sel ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
             }
             /* Scroll by whole rows so none is ever cut in half. */
-            if (s_sel < s_first) {
-                s_first = s_sel;
-            } else if (s_sel >= s_first + s_visible_rows) {
-                s_first = s_sel - s_visible_rows + 1;
+            int row = s_item_row[s_sel];
+            if (row < s_first) {
+                s_first = row;
+            } else if (row >= s_first + s_visible_rows) {
+                s_first = row - s_visible_rows + 1;
             }
             lv_obj_scroll_to_y(s_list, s_first * s_row_h, LV_ANIM_OFF);
             set_text(s_hint_select, ITEM_ACTIONS[s_sel]);
@@ -339,28 +352,28 @@ static void show(view_t view)
     switch (view) {
     case VIEW_STATUS:
     case VIEW_BATTERY:
-        set_text(s_title, view == VIEW_STATUS ? "STATUS" : "BATTERY");
-        set_text(s_hint_down, "Back");
-        set_text(s_hint_select, "Back");
+        set_text(s_title, view == VIEW_STATUS ? MUSE_UI_TEXT("STATUS", "连接状态") : MUSE_UI_TEXT("BATTERY", "电池"));
+        set_text(s_hint_down, MUSE_UI_TEXT("Back", "返回"));
+        set_text(s_hint_select, MUSE_UI_TEXT("Back", "返回"));
         break;
     case VIEW_POWER: {
         char text[96];
-        snprintf(text, sizeof(text), "Turn Muse off?\n\nPress the %s button to turn it back on.",
+        snprintf(text, sizeof(text), MUSE_UI_TEXT("Turn Muse off?\n\nPress the %s button to turn it back on.", "确认关机？\n\n按 %s 键重新启动。"),
                  muse_board->aux_button);
-        set_text(s_title, "POWER OFF");
+        set_text(s_title, MUSE_UI_TEXT("POWER OFF", "关机"));
         set_text(s_page, text);
-        set_text(s_hint_down, "Cancel");
-        set_text(s_hint_select, "Power off");
+        set_text(s_hint_down, MUSE_UI_TEXT("Cancel", "取消"));
+        set_text(s_hint_select, MUSE_UI_TEXT("Power off", "关机"));
         break;
     }
     case VIEW_RESET:
-        set_text(s_title, "RESET PAIRING");
-        set_text(s_page, "Forget Wi-Fi and the Muse app pairing, then restart?");
-        set_text(s_hint_down, "Cancel");
-        set_text(s_hint_select, "Reset");
+        set_text(s_title, MUSE_UI_TEXT("RESET PAIRING", "重置配对"));
+        set_text(s_page, MUSE_UI_TEXT("Forget Wi-Fi and the Muse app pairing, then restart?", "清除网络与 Muse 账号配对并重启？\n\n需要重新添加设备。"));
+        set_text(s_hint_down, MUSE_UI_TEXT("Cancel", "取消"));
+        set_text(s_hint_select, MUSE_UI_TEXT("Reset", "确认重置"));
         break;
     default:
-        set_text(s_title, "MENU");
+        set_text(s_title, MUSE_UI_TEXT("MENU", "设置"));
         set_text(s_hint_down, s_down_text);
         break;
     }
@@ -437,7 +450,7 @@ static void handle(muse_menu_key_t key)
         break;
     case VIEW_LIST:
         if (key == MUSE_MENU_DOWN) {
-            s_sel = (s_sel + 1) % ITEM_COUNT;
+            do { s_sel = (s_sel + 1) % ITEM_COUNT; } while (!s_rows[s_sel]);
             refresh();
         } else {
             activate(s_sel);
@@ -460,7 +473,7 @@ static void handle(muse_menu_key_t key)
             show(VIEW_LIST);
         } else {
             muse_menu_close();
-            muse_state_set_caption("RESETTING...");
+            muse_state_set_caption(MUSE_UI_TEXT("RESETTING...", "正在重置…"));
             muse_link_reset_setup();
         }
         break;
@@ -502,6 +515,13 @@ void muse_menu_build(lv_obj_t *parent, int w, int h)
     bool small = h < 200 || w < 200;
     const lv_font_t *font = small ? FONT_COMPACT : &lv_font_montserrat_20;
     const lv_font_t *fine = small ? &lv_font_unscii_8 : &lv_font_unscii_16;
+#if CONFIG_MUSE_BOARD_FOLOTOY_PASSPORT
+    LV_FONT_DECLARE(passport_font_16);
+    static lv_font_t cjk;
+    cjk = passport_font_16;
+    cjk.fallback = &lv_font_montserrat_16;
+    font = fine = &cjk;
+#endif
     int pad = small ? 2 : 8;
     int title_h = small ? 13 : 40;
     int hint_h = small ? 17 : 44;
@@ -523,7 +543,7 @@ void muse_menu_build(lv_obj_t *parent, int w, int h)
     lv_obj_remove_flag(s_root, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_flag(s_root, LV_OBJ_FLAG_HIDDEN);
 
-    s_title = label(s_root, fine, COLOR_DIM, "MENU");
+    s_title = label(s_root, fine, COLOR_DIM, MUSE_UI_TEXT("MENU", "设置"));
     lv_obj_set_style_text_letter_space(s_title, 1, 0);
     lv_obj_align(s_title, LV_ALIGN_TOP_MID, 0, small ? 3 : 12);
 
@@ -535,7 +555,15 @@ void muse_menu_build(lv_obj_t *parent, int w, int h)
     lv_obj_set_flex_flow(s_list, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_scrollbar_mode(s_list, LV_SCROLLBAR_MODE_OFF);
     lv_obj_remove_flag(s_list, LV_OBJ_FLAG_CLICKABLE);
+    int row = 0;
     for (int i = 0; i < ITEM_COUNT; i++) {
+        s_item_row[i] = -1;
+#if CONFIG_MUSE_PHONE_BRIDGE
+        /* The bridge uses phone networking. Do not offer controls for an
+         * unused Wi-Fi path, unavailable reply TTS or unsupported power-off. */
+        if (i == ITEM_WIFI || i == ITEM_PHONE || i == ITEM_SPEAKER || i == ITEM_POWER) continue;
+#endif
+        s_item_row[i] = row++;
         lv_obj_t *r = lv_obj_create(s_list);
         lv_obj_remove_style_all(r);
         lv_obj_set_size(r, lv_pct(100), s_row_h);
@@ -552,7 +580,7 @@ void muse_menu_build(lv_obj_t *parent, int w, int h)
 
     s_page = label(s_root, fine, COLOR_TEXT, "");
     lv_obj_set_width(s_page, w - 4 * pad - strip);
-    lv_obj_set_style_text_line_space(s_page, small ? 3 : 8, 0);
+    lv_obj_set_style_text_line_space(s_page, MUSE_UI_TEXT(small ? 3 : 8, 2), 0);
     lv_label_set_long_mode(s_page, LV_LABEL_LONG_MODE_WRAP);
     lv_obj_set_pos(s_page, 2 * pad, title_h + pad);
     lv_obj_add_flag(s_page, LV_OBJ_FLAG_HIDDEN);
@@ -574,11 +602,15 @@ void muse_menu_build(lv_obj_t *parent, int w, int h)
         lv_obj_set_style_transform_pivot_y(s_hint_down, lv_pct(50), 0);
         lv_obj_align(s_hint_down, LV_ALIGN_CENTER, (w - strip) / 2, aux->y);
     } else {
-        s_down_text = LV_SYMBOL_DOWN " Down";
+        s_down_text = MUSE_UI_TEXT(LV_SYMBOL_DOWN " Down", "下键：下一项");
         align_on_bar(s_hint_down, aux->align, pad);
     }
     s_hint_select = label(s_root, font, COLOR_TEXT, "");
     align_on_bar(s_hint_select, talk->align, pad);
+#if CONFIG_MUSE_BOARD_FOLOTOY_PASSPORT
+    lv_obj_align(s_hint_select, LV_ALIGN_BOTTOM_RIGHT, -20, -12);
+    lv_obj_align(s_hint_down, LV_ALIGN_BOTTOM_LEFT, 20, -12);
+#endif
 }
 
 bool muse_menu_tick(float now)

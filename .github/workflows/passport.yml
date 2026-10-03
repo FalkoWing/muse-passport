@@ -1,0 +1,60 @@
+name: Muse Passport
+on:
+  push:
+    branches: [passport]
+  pull_request:
+    branches: [passport]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: passport-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  firmware-and-protocol:
+    runs-on: ubuntu-latest
+    container: espressif/idf:v6.0.1
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Install host test dependencies
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends libmbedtls-dev pkg-config
+      - name: Build public token-free Passport firmware
+        working-directory: esp32
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh" > /dev/null
+          ./tools/passport.sh release-build
+      - name: Test firmware and Android backend
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh" > /dev/null
+          python -m pip install 'cryptography==42.0.8'
+          (cd esp32 && python -m unittest discover -s tests -p 'test_*.py')
+          PYTHONPATH=android/app/src/main/python:linux/src python -m unittest discover -s android/tests
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.13'
+      - name: Install Android SDK packages
+        run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - name: Build and lint debug APK
+        working-directory: android
+        shell: bash
+        run: |
+          export PASSPORT_BUILD_PYTHON=$(command -v python)
+          ./tools/build.sh assembleDebug lintDebug
+          javac -d /tmp/passport-protocol app/src/main/java/ai/muse/passport/BridgeProtocol.java tests/ProtocolTest.java
+          java -cp /tmp/passport-protocol ProtocolTest

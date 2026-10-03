@@ -1,0 +1,14 @@
+dependencies:
+  idf: ">=6.0.1,<6.1.0"
+  espressif/esp_lvgl_port:
+    version: "2.9.0"
+    rules:
+      - if: '$CONFIG{MUSE_BOARD_ID} == "folotoy_passport"'
+  espressif/button:
+    version: "4.2.0"
+    rules:
+      - if: '$CONFIG{MUSE_BOARD_ID} == "folotoy_passport"'
+  espressif/esp_codec_dev:
+    version: "1.6.2"
+    rules:
+      - if: '$CONFIG{MUSE_BOARD_ID} == "folotoy_passport"'

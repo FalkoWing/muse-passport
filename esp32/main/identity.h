@@ -1,3 +1,4 @@
+/* Modified for Muse Passport community integration, 2026-10-04. */
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
@@ -27,5 +28,6 @@ const char *identity_node_id(void);
 const char *identity_ble_name(void);
 const char *identity_mac(void);
 const char *identity_device_id(void);
-// The maker's SDK token (CONFIG_GADGET_SDK_TOKEN), or NULL when the build has none.
+// Device SDK token from NVS, falling back to the maker's build default only when
+// no override exists. Stable storage for this boot; NULL when unconfigured.
 const char *identity_sdk_token(void);

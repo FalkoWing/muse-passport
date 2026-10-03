@@ -1,3 +1,4 @@
+# Modified for Muse Passport community integration, 2026-10-04.
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,6 +14,15 @@
 # limitations under the License.
 
 menu "Muse"
+
+    config MUSE_PHONE_BRIDGE
+        bool "Android BLE network bridge (experimental)"
+        depends on MUSE_BOARD_FOLOTOY_PASSPORT
+        default n
+        help
+            A bonded Android companion owns the Muse API and Noise session.
+            Paired devices use BLE for voice and text replies, with no Wi-Fi
+            connection. The official Muse app is still used for initial pairing.
 
     choice MUSE_BOARD
         prompt "Board with the full UI"
@@ -43,6 +53,10 @@ menu "Muse"
             bool "Waveshare ESP32-C6-Touch-AMOLED-1.8"
             depends on IDF_TARGET_ESP32C6
 
+        config MUSE_BOARD_FOLOTOY_PASSPORT
+            bool "FoloToy AI Passport (ESP32-C3, three ADC buttons)"
+            depends on IDF_TARGET_ESP32C3
+
         config MUSE_BOARD_SENSECAP_WATCHER
             bool "Seeed SenseCAP Watcher (ESP32-S3, round touch LCD, wheel)"
             depends on IDF_TARGET_ESP32S3
@@ -68,6 +82,7 @@ menu "Muse"
         default "waveshare_s3_175" if MUSE_BOARD_WAVESHARE_S3_175
         default "aipi" if MUSE_BOARD_AIPI
         default "waveshare_c6_18" if MUSE_BOARD_WAVESHARE_C6_18
+        default "folotoy_passport" if MUSE_BOARD_FOLOTOY_PASSPORT
         default "sensecap_watcher" if MUSE_BOARD_SENSECAP_WATCHER
         default "m5stack_sticks3" if MUSE_BOARD_M5STACK_STICKS3
         default "m5stack_stickc_plus2" if MUSE_BOARD_M5STACK_STICKC_PLUS2

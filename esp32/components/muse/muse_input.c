@@ -1,3 +1,4 @@
+/* Modified for Muse Passport community integration, 2026-10-04. */
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
@@ -38,8 +39,10 @@
 #include "muse_link.h"
 #include "muse_mem.h"
 #include "muse_menu.h"
+#include "muse_passport_reader.h"
 #include "muse_settings.h"
 #include "muse_state.h"
+#include "muse_locale.h"
 #include "muse_ui.h"
 #include "muse_voice.h"
 #include "muse_wifi.h"
@@ -91,14 +94,14 @@ static void power_off(void)
     muse_state_set_progress(0);
     muse_state_set_level(0);
     muse_state_set_mode(MUSE_MODE_OFF);
-    muse_state_set_caption("GOODBYE!");
+    muse_state_set_caption(MUSE_UI_TEXT("GOODBYE!", "再见"));
     vTaskDelay(pdMS_TO_TICKS(GOODBYE_MS));
     esp_err_t err = muse_board->power_off();
     /* Only reached if the board couldn't power off. */
     vTaskDelay(pdMS_TO_TICKS(500));
     ESP_LOGE(TAG, "power-off failed (%s)", esp_err_to_name(err));
     muse_state_set_mode(MUSE_MODE_IDLE);
-    muse_state_set_caption("COULDN'T POWER OFF");
+    muse_state_set_caption(MUSE_UI_TEXT("COULDN'T POWER OFF", "此设备暂不支持关机"));
 }
 
 static void set_asleep(bool asleep, const char *why)
@@ -163,7 +166,7 @@ static void aux_button(bool pressed, bool edge)
         if (held == HINT_TICKS) {
             uint32_t v = UINT32_MAX;
             muse_state_caption(saved_caption, sizeof(saved_caption), &v);
-            muse_state_set_caption("HOLD TO POWER OFF");
+            muse_state_set_caption(MUSE_UI_TEXT("HOLD TO POWER OFF", "继续按住以关机"));
             hinted = true;
         } else if (held == LONG_TICKS) {
             swallow = true;
@@ -183,6 +186,32 @@ static void aux_button(bool pressed, bool edge)
 /* No touch: the aux button opens the menu and steps down it; any press wakes. */
 static void menu_button(bool pressed, bool edge)
 {
+#if CONFIG_MUSE_PHONE_BRIDGE
+    /* DOWN: page on release, hold 0.8 s for settings. Wake consumes the key.
+     * Once settings are open, its original DOWN/OK behavior takes priority. */
+    static TickType_t pressed_at;
+    static bool reading, swallowed;
+    if (edge && pressed) {
+        swallowed = muse_state_asleep();
+        // Use the same hold gesture before and after a transcript exists.
+        // A short press with no readable page is simply a no-op.
+        reading = !swallowed && !s_talk_down && !muse_menu_is_open();
+        pressed_at = xTaskGetTickCount();
+        if (swallowed) { set_asleep(false, muse_board->aux_button); return; }
+        if (reading) { muse_state_poke(); return; }
+    }
+    if (reading && pressed && !swallowed
+        && xTaskGetTickCount() - pressed_at >= pdMS_TO_TICKS(800)) {
+        muse_menu_key(MUSE_MENU_DOWN);
+        swallowed = true;
+    }
+    if (edge && !pressed) {
+        if (reading && !swallowed && !s_talk_down) muse_passport_reader_step(1);
+        reading = swallowed = false;
+        return;
+    }
+    if (reading || swallowed) return;
+#endif
     if (!edge || !pressed) {
         return;
     }
@@ -375,6 +404,13 @@ static void input_task(void *arg)
 
     for (;;) {
         unsigned ev = muse_board->poll_buttons();
+        if (ev & MUSE_BTN_PREV_PRESS) {
+            if (muse_state_asleep()) set_asleep(false, "UP");
+            else if (!s_talk_down && !muse_menu_is_open()) {
+                muse_passport_reader_step(-1);
+                muse_state_poke();
+            }
+        }
         if (ev & (MUSE_BTN_TALK_PRESS | MUSE_BTN_TALK_RELEASE)) {
             ESP_LOGI(TAG, "talk key:%s%s", ev & MUSE_BTN_TALK_PRESS ? " press" : "",
                      ev & MUSE_BTN_TALK_RELEASE ? " release" : "");
@@ -476,7 +512,7 @@ static void chat_line(char *piece, bool last, bool whole)
         s_chat = heap_caps_malloc(CHAT_MAX, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
         s_chat_len = 0;
     }
-    const char *err = !whole ? "LINE TOO LONG" : !s_chat ? "OUT OF MEMORY" : s_chat_len + n >= CHAT_MAX ? "TOO LONG" : NULL;
+    const char *err = !whole ? "LINE TOO LONG" : !s_chat ? MUSE_UI_TEXT("OUT OF MEMORY", "内存不足，请重试") : s_chat_len + n >= CHAT_MAX ? "TOO LONG" : NULL;
     if (err) {
         free(s_chat);
         s_chat = NULL;
@@ -545,6 +581,26 @@ static void set_face(const char *name)
  */
 static bool console_command(char *line, bool whole)
 {
+#if CONFIG_MUSE_PHONE_BRIDGE
+    if (!strcmp(line, "reader.next") || !strcmp(line, "reader.prev")) {
+        muse_passport_reader_step(!strcmp(line, "reader.next") ? 1 : -1);
+        return true;
+    }
+    if (!strcmp(line, "menu.status")) {
+        printf("@menu {\"open\":%s}\n", muse_menu_is_open() ? "true" : "false");
+        fflush(stdout);
+        return true;
+    }
+    if (!strcmp(line, "reader.status")) {
+        muse_passport_page_t page = {0};
+        bool available = muse_passport_reader_page(&page);
+        printf("@reader {\"available\":%s,\"page\":%d,\"pages\":%d,\"role\":\"%s\",\"role_page\":%d,\"role_pages\":%d,\"bytes\":%u}\n",
+               available ? "true" : "false", page.page, page.pages, page.assistant ? "assistant" : "user",
+               page.role_page, page.role_pages, (unsigned)strlen(page.text));
+        fflush(stdout);
+        return true;
+    }
+#endif
     if (!strcmp(line, "status")) {
         size_t cap = 1024;   /* long SSID, host and VM names escaped: past 512 */
         char *json = heap_caps_malloc(cap, MUSE_BIG_CAPS);

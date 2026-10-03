@@ -1,0 +1,21 @@
+Muse Passport
+
+This community project contains code derived from Muse Gadget SDK.
+Upstream: https://github.com/facebookincubator/muse-gadget-sdk
+Copyright (c) Meta Platforms, Inc. and affiliates.
+Upstream base checked out locally: b9008ab.
+
+Community additions and integration changes include the Android BLE/network
+companion, FoloToy AI Passport board support, Chinese UI, audio transport,
+text paging, and runtime SDK token configuration. The root README and public
+Passport documentation have been adapted for community distribution.
+
+FoloToy BSP and related test stubs retain their MIT notices. Generated Source
+Han Sans font resources retain SIL Open Font License 1.1. Other third-party
+files and dependencies retain their own licenses and copyright notices.
+See THIRD_PARTY.md and the applicable source headers and license files.
+
+The upstream Jollybot avatar is expressly excluded from the upstream
+Apache-2.0 grant; this project does not relicense it.
+
+Muse Passport is not an official Meta, Muse, or FoloToy product.

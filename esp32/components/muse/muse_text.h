@@ -1,3 +1,4 @@
+/* Modified for Muse Passport community integration, 2026-10-04. */
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
@@ -32,6 +33,9 @@ extern "C" {
 /* The stand-in for the UTF-8 character at s into out, and its length (0 drops
  * the character); -1 to keep it. *len is the character's length in bytes. */
 int muse_text_ascii(const char *s, size_t *len, char out[4]);
+
+/* Removes an incomplete final UTF-8 codepoint after bounded formatting/copy. */
+void muse_text_trim_utf8(char *text);
 
 /* Puts the stand-ins into s, which has room for cap bytes. If one doesn't fit,
  * the text ends there. */

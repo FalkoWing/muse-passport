@@ -1,3 +1,4 @@
+/* Modified for Muse Passport community integration, 2026-10-04. */
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
@@ -2492,7 +2493,7 @@ void app_run(void) {
     ESP_LOGI(TAG, "  Region:   %s", have_region ? region : "(none)");
     ESP_LOGI(TAG, "  Verify:   %s", link_pairing_sign_factory_test());
     // Only the hint gadgets.muse.ai displays; the full token is never logged.
-    ESP_LOGI(TAG, "  SDK token:  %.12s", identity_sdk_token() ? identity_sdk_token() : "(none)");
+    ESP_LOGI(TAG, "  SDK token:  %s", identity_sdk_token() ? "configured" : "none");
     ESP_LOGI(TAG, "========================");
 
     link_pairing_init(identity_node_id(), identity_device_id(), identity_mac(),
@@ -2528,6 +2529,10 @@ void app_run(void) {
 
     bool setup_complete = config_setup_complete();
     bool provisioned = config_is_provisioned();
+    bool phone_only_build = false;
+#if CONFIG_MUSE_PHONE_BRIDGE
+    phone_only_build = true;
+#endif
 
     if (CONFIG_HOMEHUB_WIFI_SSID[0]) {
         // Dev override supplies Wi-Fi from menuconfig and may run token-only in
@@ -2552,7 +2557,7 @@ void app_run(void) {
             if (!config_clear_setup()) {
                 ESP_LOGE(TAG, "partial setup deletion could not be verified");
             }
-        } else if (setup_complete && !have_wifi && WIFI_WITHOUT_PAIRING) {
+        } else if (setup_complete && !have_wifi && WIFI_WITHOUT_PAIRING && !phone_only_build) {
             // Muse can forget the network after pairing. With no Wi-Fi and
             // pairing refused once setup is done, the device would be stuck,
             // so start over and let the app pair it again.
@@ -2590,7 +2595,7 @@ void app_run(void) {
         }
     }
 
-    if (setup_complete) {
+    if (setup_complete && !phone_only_build) {
         if (!skip_boot_scan) {
             vTaskDelay(pdMS_TO_TICKS(500));
             int n = wifi_mgr_scan_and_cache();
@@ -2633,7 +2638,7 @@ void app_run(void) {
     } else {
         ui_set_ble("off");
         ESP_LOGI(TAG, "BLE setup disabled; long-press reset to pair again");
-#if CONFIG_MUSE_ENABLED && CONFIG_SPIRAM
+#if CONFIG_MUSE_ENABLED && (CONFIG_SPIRAM || CONFIG_MUSE_PHONE_BRIDGE)
         // Muse may turn on its BLE companion later. The controller needs a
         // 30 KB internal block that TLS and the VM session leave fragmented,
         // so bring the stack up now; it stays silent until advertising is on.
@@ -2672,7 +2677,7 @@ void app_run(void) {
         ESP_LOGI(TAG, "found provisioned creds in NVS, reconnecting (first: %s)", wifi_ssid);
     }
 
-    if (wifi_ssid) {
+    if (wifi_ssid && !(phone_only_build && provisioned)) {
         ui_set_status("wifi_connecting");
         led_status_set_state(LED_STATE_WIFI_CONNECTING);
         char joined[WIFI_KNOWN_SSID_MAX + 1] = {0};

@@ -1,3 +1,4 @@
+/* Modified for Muse Passport community integration, 2026-10-04. */
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
@@ -28,6 +29,7 @@
 #include "muse_input.h"
 #include "muse_settings.h"
 #include "muse_state.h"
+#include "muse_locale.h"
 #include "muse_ui.h"
 #include "muse_voice.h"
 #include "muse_wifi.h"
@@ -69,7 +71,7 @@ void muse_app_run(const muse_board_t *board)
     muse_settings_set_listener(on_setting);
     muse_state_init();
     muse_battery_init();
-    muse_state_set_caption("WAKING UP...");
+    muse_state_set_caption(MUSE_UI_TEXT("WAKING UP...", "正在启动…"));
     ESP_ERROR_CHECK(muse_ui_start());
     ESP_LOGI(TAG, "UI built: free internal %u", (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
 

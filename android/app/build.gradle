@@ -1,0 +1,61 @@
+plugins { id 'com.android.application'; id 'com.chaquo.python' }
+def signingFile = rootProject.file('.private/signing.properties')
+def releaseSigning = new Properties()
+if (signingFile.exists()) signingFile.withInputStream { releaseSigning.load(it) }
+
+android {
+    namespace 'ai.muse.passport'
+    compileSdk 36
+    defaultConfig {
+        applicationId 'ai.muse.passport'
+        minSdk 26
+        targetSdk 35
+        versionCode 7
+        versionName '1.0.1'
+        ndk { abiFilters 'arm64-v8a' }
+    }
+    signingConfigs {
+        release {
+            if (signingFile.exists()) {
+                storeFile rootProject.file(releaseSigning.getProperty('storeFile'))
+                storePassword releaseSigning.getProperty('storePassword')
+                keyAlias releaseSigning.getProperty('keyAlias')
+                keyPassword releaseSigning.getProperty('keyPassword')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            debuggable false
+            minifyEnabled false // Chaquopy calls Java/Python by reflection.
+            signingConfig signingConfigs.release
+        }
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
+chaquopy {
+    defaultConfig {
+        version = '3.13'
+        if (System.getenv('PASSPORT_BUILD_PYTHON')) buildPython(System.getenv('PASSPORT_BUILD_PYTHON'))
+        pip { install 'cryptography==42.0.8' }
+    }
+    sourceSets { main { srcDir "$buildDir/generated/musePython" } }
+}
+// Bundle only the upstream protocol modules, preserving their license headers.
+// No Linux BLE/service dependencies and no credentials are included.
+def prepareMuse = tasks.register('prepareMusePython', Copy) {
+    from('../../linux/src') {
+        include 'musegadget/__init__.py', 'musegadget/muse_api.py', 'musegadget/link_client.py', 'musegadget/noise/**'
+        exclude '**/__pycache__/**', '**/*.pyc'
+    }
+    into "$buildDir/generated/musePython"
+}
+tasks.configureEach { if (name != 'prepareMusePython' && name.contains('Python') && (name.startsWith('generate') || name.startsWith('merge'))) dependsOn prepareMuse }
+dependencies { implementation 'com.squareup.okhttp3:okhttp:4.12.0' }
+
+// Never produce a quietly unsigned public APK.
+tasks.configureEach {
+    if (name == 'validateSigningRelease') doFirst {
+        if (!signingFile.exists()) throw new GradleException('Create a local release key with tools/setup_signing.py first; never commit it.')
+    }
+}

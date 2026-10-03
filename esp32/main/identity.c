@@ -1,3 +1,4 @@
+/* Modified for Muse Passport community integration, 2026-10-04. */
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
@@ -22,6 +23,7 @@
 
 #include "esp_mac.h"
 #include "esp_log.h"
+#include "sdk_token_store.h"
 
 static const char *TAG = "link.identity";
 
@@ -40,6 +42,7 @@ static char s_mac[18];
 static char s_device_id[48];
 
 void identity_init(void) {
+    sdk_token_store_init(CONFIG_GADGET_SDK_TOKEN);
     uint8_t mac[6] = {0};
     if (esp_read_mac(mac, ESP_MAC_WIFI_STA) != ESP_OK) {
         ESP_LOGW(TAG, "esp_read_mac failed; using zeros");
@@ -59,5 +62,5 @@ const char *identity_ble_name(void) { return s_ble_name; }
 const char *identity_mac(void) { return s_mac; }
 const char *identity_device_id(void) { return s_device_id; }
 const char *identity_sdk_token(void) {
-    return CONFIG_GADGET_SDK_TOKEN[0] ? CONFIG_GADGET_SDK_TOKEN : NULL;
+    return sdk_token_store_get();
 }

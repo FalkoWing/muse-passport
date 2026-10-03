@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Modified for Muse Passport community integration, 2026-10-04.
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -37,13 +38,14 @@ USB = {
     "s3n": USJ,
     "aipi": USJ,
     "c6": USJ,
+    "passport": USJ,
     "sticks3": USJ,
     "watcher": CH342,   # the ESP32-S3 on the second port; the Himax camera chip is on the first
     "plus2": CH9102,
 }
 # Boards whose console takes Muse's serial commands (tools/muse/chat.py). The
 # Watcher reads them on its CH342 port with MUSE_CONSOLE_UART.
-COMMANDS = ("s3", "s3n", "aipi", "c6", "sticks3", "watcher", "plus2")
+COMMANDS = ("s3", "s3n", "aipi", "c6", "passport", "sticks3", "watcher", "plus2")
 # Bridges that drop bytes when a whole packet arrives at once, so writes to them
 # go 64 bytes at a time at the line rate (paced_esptool.py, chat.Board.write).
 PACED = (CH342,)

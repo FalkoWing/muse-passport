@@ -1,3 +1,4 @@
+/* Modified for Muse Passport community integration, 2026-10-04. */
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
@@ -42,6 +43,9 @@ void muse_link_set_state(muse_link_state_t state)
 
 muse_link_state_t muse_link_state(void)
 {
+#if CONFIG_MUSE_PHONE_BRIDGE
+    if (muse_link_hatch_linked()) return muse_link_req_ready() ? MUSE_LINK_ONLINE : MUSE_LINK_CONNECTING;
+#endif
     return s_state;
 }
 

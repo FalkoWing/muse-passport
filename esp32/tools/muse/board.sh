@@ -1,4 +1,5 @@
 #!/bin/bash
+# Modified for Muse Passport community integration, 2026-10-04.
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,7 +15,7 @@
 # limitations under the License.
 
 # Build or flash Home Link for one board:
-#   tools/muse/board.sh build|flash <s3|s3n|aipi|c6|watcher|sticks3|plus2> [serial|port]
+#   tools/muse/board.sh build|flash <s3|s3n|aipi|c6|passport|watcher|sticks3|plus2> [serial|port]
 # Build log: /tmp/muse_build_<board>.log. flash finds the board's port by its
 # USB device (tools/muse/ports.py); with several of a kind attached, pass the
 # one's USB serial number (the MAC on native USB) or its port. Flashing from a
@@ -23,13 +24,14 @@
 # flashes in build-muse-<profile>-bench/, so neither build's sdkconfig hides
 # the other's.
 set -uo pipefail
-cmd=${1:?build|flash}; board=${2:?s3|s3n|aipi|c6|watcher|sticks3|plus2}
+cmd=${1:?build|flash}; board=${2:?s3|s3n|aipi|c6|passport|watcher|sticks3|plus2}
 root=$(cd "$(dirname "$0")/../.." && pwd)
 case $board in
     s3)      profile=waveshare-s3-175c;    target=esp32s3 ;;
     s3n)     profile=waveshare-s3-175;     target=esp32s3 ;;
     aipi)    profile=aipi;                 target=esp32s3 ;;
     c6)      profile=waveshare-c6-18;      target=esp32c6 ;;
+    passport) profile=folotoy-passport;    target=esp32c3 ;;
     # Its CH342 bridge drops bytes when esptool sends a whole packet at once,
     # so pace the writes (paced_esptool.py) at the baud they were tested at.
     watcher) profile=sensecap-watcher;     target=esp32s3; baud=115200; paced=1 ;;

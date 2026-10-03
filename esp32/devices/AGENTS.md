@@ -1,3 +1,4 @@
+<!-- Modified for Muse Passport community integration, 2026-10-04. -->
 <!--
 Copyright (c) Meta Platforms, Inc. and affiliates.
 
@@ -28,6 +29,7 @@ code for it. Clone the repo rather than reading it on the web, and search it.
 
 | Board | Vendor source | Where to look |
 |---|---|---|
+| FoloToy AI Passport | [FoloToy/ai-passport](https://gitee.com/FoloToy/ai-passport) | `components/bsp/include/bsp_pins.h`, `docs/hardware-porting-guide.md`. Imported BSP and pinned commit: `../components/passport_bsp/UPSTREAM.md`. One ADC owner for three buttons; shared I2C; native USB console because GPIO21 is the backlight. |
 | Waveshare ESP32-S3-Touch-AMOLED-1.75C | [waveshareteam/ESP32-S3-Touch-AMOLED-1.75C](https://github.com/waveshareteam/ESP32-S3-Touch-AMOLED-1.75C) | `Schematic/`. `examples/esp-idf/` for the AXP2101 power chip (`01_AXP2101`) and the QMI8658 IMU (`04_Immersive_block`). `examples/arduino/examples/` for the ES7210 mics and the ES8311 codec. Muse drives the display, touch and codec through its BSP, `waveshare/esp32_s3_touch_amoled_1_75c`. |
 | Waveshare ESP32-S3-Touch-AMOLED-1.75 | [waveshareteam/ESP32-S3-Touch-AMOLED-1.75](https://github.com/waveshareteam/ESP32-S3-Touch-AMOLED-1.75) | The 1.75C's chips on other pins (LCD and touch reset on GPIO 39 and 40, MCLK on 42), plus an SD slot on GPIO 1 to 3 and a TCA9554 expander. PWR reaches the ESP32 only through the AXP2101. Muse uses the 1.75C driver with its BSP, `waveshare/esp32_s3_touch_amoled_1_75`. |
 | Seeed SenseCAP Watcher | [Seeed-Studio/SenseCAP-Watcher-Firmware](https://github.com/Seeed-Studio/SenseCAP-Watcher-Firmware) | `components/sensecap-watcher/` is Seeed's BSP. `include/sensecap-watcher.h` has the pins for the LCD, touch, knob, IO expander, audio, battery, SD card and the Himax camera chip (driven through `components/sscma_client/`). `examples/factory_firmware/` is the firmware it ships with. xiaozhi-esp32's [sensecap-watcher board](https://github.com/78/xiaozhi-esp32/tree/main/main/boards/sensecap-watcher) is a second reference. |
@@ -271,3 +273,7 @@ On a classic ESP32 (see `board_m5stack_stickc_plus2.c`):
    scan should show `<prefix>-XXXXXX`.
 
 If you don't have the board, say that the port was only built, not run.
+
+### Passport port status
+
+The Passport has passed build, startup/audio and pairing checks. The user confirmed normal-speed transcription, Chinese rendering and assistant replies through the Android BLE bridge. The user also confirmed the Android 0.1.4 transcript/long-reply reader and matching physical-button paging test without issues. Long-term background/network-switching and battery behavior remain unverified. If local `../../docs/PASSPORT_MUSE_DEVELOPMENT_NOTES.md` exists, read those private notes before changing Passport audio, reply handling or UI; they are intentionally excluded from publication. Follow [FOLOTOY_PASSPORT.md](FOLOTOY_PASSPORT.md) for configuration and outstanding hardware checks. It uses a separate portrait UI and generated Chinese bitmap font; `tools/muse/avatar.py` recognizes it but rejects generated pixel avatars. Do not flash before the user has added their token and authorized replacing the existing firmware.

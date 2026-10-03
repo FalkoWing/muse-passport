@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Modified for Muse Passport community integration, 2026-10-04.
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -62,6 +63,7 @@ BOARDS = {
     "Waveshare ESP32-S3-Touch-AMOLED-1.75": "s3n",
     "AIPI Lite": "aipi",
     "Waveshare ESP32-C6-Touch-AMOLED-1.8": "c6",
+    "FoloToy AI Passport": "passport",
     "Seeed SenseCAP Watcher": "watcher",
     "M5Stack StickS3": "sticks3",
     "M5Stack StickC Plus2": "plus2",
@@ -319,6 +321,8 @@ def main():
     ap.add_argument("--reply", metavar="FILE", help="use this reply from Muse instead of asking through the board")
     ap.add_argument("--no-flash", action="store_true", help="stop after building the firmware")
     args = ap.parse_args()
+    if args.board == "passport":
+        raise Stop("Passport uses its own small portrait UI; generated pixel avatars are not supported.", 2)
     if args.edit and not os.path.exists(AVATAR_SRC):
         raise Stop(f"You have no avatar to change yet ({rel(AVATAR_SRC)}). Run this without --edit first.", 2)
 
@@ -344,6 +348,8 @@ def main():
             if st:
                 say("  " + summary(st))
                 key = BOARDS.get(st.get("board"), key)
+                if key == "passport":
+                    raise Stop("Passport uses its own small portrait UI; generated pixel avatars are not supported.", 2)
                 if not args.reply:
                     check_board(st)
 
