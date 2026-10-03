@@ -40,3 +40,6 @@ skills/folotoy-ai-passport-publisher/
 
 # Private planning, notes and community submission materials.
 docs/
+
+# Development assistant skills are local tools, not release sources.
+skills/
