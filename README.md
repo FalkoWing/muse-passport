@@ -20,13 +20,13 @@ limitations under the License.
 
 <img src="android/assets/muse-passport-icon.svg" width="88" alt="Muse Passport 图标">
 
-让随身 ESP32 设备通过蓝牙借用 Android 手机网络，与 Muse 语音对话，在小屏幕上阅读中文转录与回复。目前已在 **FoloToy AI Passport** 实机验证。
+把随身设备变成 Muse 对话终端：按住 OK 说话，松开后阅读自己的语音转录与 Muse 文字回复；长内容可以上下翻页，也能回看本轮转录。设备通过蓝牙借用 Android 手机网络，目前已在 **FoloToy AI Passport** 实机验证。
 
 这是基于 [Muse 官方 Gadgets 开源硬件方案](https://gadgets.muse.ai/) 与 [Muse Gadget SDK](https://github.com/facebookincubator/muse-gadget-sdk) 的社区衍生项目，包含设备固件与 Android 伴侣 App。与 Meta、Muse 或 FoloToy 官方没有隶属或背书关系。
 
 ## 为什么需要 Android 伴侣 App
 
-ESP32 自己直连 Muse，要求它所在的 Wi-Fi 能访问 Muse 服务。Muse Passport 把联网交给手机：设备只需 BLE 连接，日常无需设备 Wi-Fi、手机热点或随身电脑；户外也可以用手机移动网络。**手机上的 Muse Passport App 必须能够正常访问 Muse 官方服务**，仅有蓝牙连接还不够。
+ESP32 自己直连 Muse，要求它所在的 Wi-Fi 能访问 Muse 服务。Muse Passport 把联网交给手机：完成首次账号绑定后，设备日常只需 BLE 连接，无需设备 Wi-Fi、手机热点或随身电脑。在家、办公室或户外，都可以借用手机的 Wi-Fi 或移动网络；手机放在蓝牙连接范围内，即可用设备的实体按键提问、在小屏幕上读答案。**手机上的 Muse Passport App 必须能够正常访问 Muse 官方服务**，仅有蓝牙连接还不够。
 
 App 使用 Android 系统网络，无需填写代理软件名称、地址或 SOCKS 端口。若手机 VPN 使用分应用规则，请包含 Muse Passport。官方 Muse App 负责账号绑定与完整聊天记录，本伴侣 App 负责连接设备、传输语音和返回文字。
 
@@ -58,7 +58,7 @@ Passport BSP 来源与修改保留在 [UPSTREAM.md](esp32/components/passport_bs
 
 ## 下载与刷机
 
-从 [GitHub Releases](https://github.com/FalkoWing/muse-passport/releases) 下载 **1.0.1 预发布**的配套文件。源码不存安装包，封面仅用于玩法社区。
+从 [1.0.1 Release 下载页](https://github.com/FalkoWing/muse-passport/releases/tag/v1.0.1) 获取配套 APK 与固件，也可以在 [全部 Releases](https://github.com/FalkoWing/muse-passport/releases) 查看后续版本。当前 1.0.1 标记为预发布。源码不存安装包，封面仅用于玩法社区。
 
 | 文件 | 用途 |
 |---|---|
@@ -95,17 +95,17 @@ python -m esptool --chip esp32c3 -p PORT -b 460800 \
 
 ## 安装 App、设置 token 与绑定账号
 
-1. 安装 APK，打开 **Muse Passport**、开启蓝牙并允许所需权限。发行版与旧调试版签名不同，不能覆盖安装；切换须先卸载旧 App，会清除手机设置与本轮缓存，但不会清除设备配对。以后发行更新可以覆盖安装。
+1. 先在手机登录官方 **Muse App**，确认网络可访问 Muse 服务。从上方 Release 下载页安装 APK，打开 **Muse Passport**、开启蓝牙并允许所需权限。发行版与旧调试版签名不同，不能覆盖安装；切换须先卸载旧 App，会清除手机设置与本轮缓存，但不会清除设备配对。以后发行更新可以覆盖安装。
 2. 点击“选择设备”，选择 `MuseGadget-XXXXXX`，点击“连接 Passport”。系统蓝牙配对弹窗要求 PIN 时，输入 Passport 屏幕上的六位数字。
-3. 打开 App 的“设备设置 → 设置 SDK token”，粘贴自己的 `mgst_…` token，点击“保存到设备”。设备保存后重启，App 重连后检查“SDK token 已设置”。公开固件不包含维护者或其他用户的 token。
-4. 若设备已绑定 Muse 账号，等待“Muse 已连接”即可。全新设备先断开伴侣 App，在官方 Muse App 的 **Settings → Devices → Developer mode** 开启开发者模式，添加同名设备；按官方流程选择可用 Wi-Fi、输入密码并确认，设备要求确认时按 OK。初始化完成后退出官方设备设置页，再回到 Muse Passport 连接。
-5. **首次官方账号初始化仍需 Wi-Fi 设置步骤，尚未实现纯 BLE 首次配对**；官方流程连接失败时在设备设置中重新选择可访问 Muse 的网络。账号初始化完成后的日常对话才可以只使用手机网络。SDK token 设置不是账号绑定，系统蓝牙绑定也不是 Muse 账号绑定。
+3. 用自己的 Muse 账号登录 [Muse Gadgets 的 SDK token 页面](https://gadgets.muse.ai/settings/sdk-tokens)，创建个人 SDK token。回到伴侣 App，打开“设备设置 → 设置 SDK token”，粘贴自己的 `mgst_…` token，点击“保存到设备”。设备保存后重启，App 重连后检查“SDK token 已设置”。公开固件不包含维护者或其他用户的 token。
+4. 若设备已绑定 Muse 账号，等待“Muse 已连接”即可，跳过首次绑定。全新设备先在伴侣 App 点“断开连接”；打开官方 Muse App，在设置中进入设备页面，开启开发者模式，点右上角“＋”添加同名 `MuseGadget-XXXXXX` 设备。按提示选择可访问 Muse 的 Wi-Fi、输入密码并确认；设备要求确认时按 OK。初始化完成后退出官方 App 的设备设置页，再回到 Muse Passport 点“连接 Passport”，等待“Muse 已连接”。这对应[官方指南](https://github.com/facebookincubator/muse-gadget-sdk/blob/main/esp32/README.md#4-set-it-up-with-muse)的 Settings → Devices → Developer mode / Add Device 流程；不同版本的界面文案可能略有差异。
+5. **首次官方账号初始化仍需 Wi-Fi 设置步骤，尚未实现纯 BLE 首次配对**；官方流程连接失败时回到设备设置，重新选择可访问 Muse 的网络、输入密码并重试。账号初始化完成后的日常对话才可以只使用手机网络。SDK token 设置不是账号绑定，系统蓝牙绑定也不是 Muse 账号绑定。
 
 Passport 同时只能被一个 App 连接，官方 Muse App 的设备设置页与伴侣 App 不能同时占用它。普通聊天页可以查看对话。公开包不继承编译时的私有 token：从旧开发固件升级前，请先通过新 App 保存自己的 token。
 
 ## 日常对话与按键
 
-看到“Muse 已连接”后，按住 OK 说话，松开等待转录与回复。每次新录音替换上一轮；完整聊天记录请在官方 Muse App 查看。
+看到“Muse 已连接”后，按住 OK 自然说话，松开发送，等待转录与文字回复。手机需留在蓝牙连接范围内，伴侣 App 需保持网络可用。每次新录音替换设备上的上一轮内容；完整聊天记录请在同一账号的官方 Muse App 查看。
 
 | 操作 | 效果 |
 |---|---|
@@ -115,7 +115,7 @@ Passport 同时只能被一个 App 连接，官方 Muse App 的设备设置页�
 | 长按下键约 0.8 秒 | 打开设备菜单 |
 | 菜单中下键 / OK | 选择 / 确认；选择关闭可退出菜单 |
 | 熄屏后按上下键 | 先唤醒，首次不翻页 |
-| App 或常驻通知点“断开” | 结束桥接；续玩时重新连接设备 |
+| App 点“断开连接”，或常驻通知点“断开” | 结束桥接；续用时打开 App 重新连接设备 |
 
 ## 常见问题与当前边界
 
