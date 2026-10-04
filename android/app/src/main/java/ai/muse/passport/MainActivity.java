@@ -95,7 +95,7 @@ public final class MainActivity extends Activity {
         add(guide,text("开始对话",18,INK,true),0);
         add(guide,text("01  按住 OK 说话，松开发送\n02  短按上下键，阅读转录与回复\n03  长按下键，打开设备设置",15,INK,false),14);
         add(guide,text("首次使用先刷入配套固件，在本应用设备设置中保存 SDK token，再到 Muse App 完成账号与 Wi-Fi 初始化。日常对话使用手机网络。蓝牙配对请输入设备显示的六位数字。",14,MUTED,false),14);
-        TextView about=text("社区项目 · 1.0.1\n使用手机当前网络。网络受限时，请确保本应用可以连接 Muse。",12,MUTED,false);about.setGravity(Gravity.CENTER);add(box,about,24);
+        TextView about=text("社区项目 · 1.0.2\n使用手机当前网络。网络受限时，请确保本应用可以连接 Muse。",12,MUTED,false);about.setGravity(Gravity.CENTER);add(box,about,24);
         setContentView(scroll);
     }
     private void deviceSettings() {

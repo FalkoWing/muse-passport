@@ -5,7 +5,8 @@ import struct
 import threading
 import time
 import unittest
-from passport_bridge import Bridge, CREDENTIALS, READY, OPEN, DATA, CANCEL, RESPONSE, TOKENS
+from passport_bridge import (Bridge, CREDENTIALS, READY, OPEN, DATA, CANCEL, RESPONSE, TOKENS,
+                             ERROR, connection_failure, MuseConnectionError)
 from musegadget.link_client import MessageDecoder, encode_message
 from musegadget.noise.noise_xx import NoiseXXResponder
 from musegadget.noise.framing import NoiseFrameDecoder, encode_noise_frames
@@ -109,6 +110,7 @@ class Network:
         self.closed = False
 
     def http(self, method, url, headers, body):
+        assert json.loads(headers)["X-API-Version"] == "1.0.0"
         if url.endswith("/device_token/refresh"):
             self.refreshed = True
             assert json.loads(headers)["Authorization"] == "Bearer hatch_refresh:refresh-test"
@@ -219,6 +221,65 @@ class BackendTest(unittest.TestCase):
         bridge.feed(OPEN, 9, b'{"verb":"GET","path":"/private/unsupported","end":true}')
         self.assertEqual(cb.wait(RESPONSE, 9), struct.pack('<hB', -1, 1))
         self.assertEqual(net.channel.uploads, [])
+
+    def failed_connection(self, network):
+        callbacks = Callbacks()
+        bridge = Bridge(callbacks, network)
+        callbacks.bridge = bridge
+        self.addCleanup(self.stop, bridge)
+        bridge.feed(CREDENTIALS, 0, b'{"access_token":"test-access","node_id":"test-node"}')
+        callbacks.wait(ERROR)
+        return callbacks.status[-1]
+
+    def test_api_http_failure_does_not_blame_phone_network(self):
+        network = Network()
+        network.http = lambda *_: json.dumps({"status": 503, "body": "service unavailable"})
+        status = self.failed_connection(network)
+        self.assertIn("账号信息获取", status)
+        self.assertIn("HTTP 503", status)
+        self.assertNotIn("检查手机网络", status)
+
+    def test_empty_vm_list_reports_account_state(self):
+        network = Network()
+        network.http = lambda *_: json.dumps({"status": 200, "body": '{"vm_list":[]}'})
+        status = self.failed_connection(network)
+        self.assertIn("账号没有可用的 Muse VM", status)
+
+    def test_websocket_failure_reports_stage_and_sanitized_http_status(self):
+        network = Network()
+        def fail(*_):
+            raise OSError("PASSPORT_WS_HTTP_403 wss://private/?token=secret-bearer")
+        network.open = fail
+        status = self.failed_connection(network)
+        self.assertIn("WebSocket", status)
+        self.assertIn("HTTP 403", status)
+        self.assertNotIn("secret-bearer", status)
+
+    def test_invalid_api_response_does_not_become_empty_account(self):
+        network = Network()
+        network.http = lambda *_: json.dumps({"status": 200, "body": "<html>private-token</html>"})
+        status = self.failed_connection(network)
+        self.assertIn("无效的 JSON", status)
+        self.assertNotIn("private-token", status)
+
+
+class ConnectionFailureTest(unittest.TestCase):
+    def test_transport_markers_do_not_expose_raw_java_exception(self):
+        status = connection_failure("Muse 账号信息获取",
+            OSError("java.io.IOException: PASSPORT_NET_DNS https://private/?token=secret"))
+        self.assertIn("域名解析失败", status)
+        self.assertIn("VPN 分应用规则", status)
+        self.assertNotIn("secret", status)
+
+    def test_unknown_exception_and_timeout_are_safe(self):
+        status = connection_failure("Muse 加密握手", ValueError("Bearer private-token"))
+        self.assertIn("ValueError", status)
+        self.assertNotIn("private-token", status)
+        self.assertIn("超时", connection_failure("Muse 加密握手", TimeoutError()))
+
+    def test_locally_generated_account_error_is_preserved(self):
+        status = connection_failure("Muse 账号信息获取", MuseConnectionError("账号没有可用的 Muse VM"))
+        self.assertIn("账号没有可用的 Muse VM", status)
 
 
 if __name__ == '__main__':

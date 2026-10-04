@@ -1,6 +1,10 @@
 package ai.muse.passport;
 
 import java.io.IOException;
+import java.net.ConnectException;
+import java.net.SocketTimeoutException;
+import java.net.UnknownHostException;
+import javax.net.ssl.SSLException;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import okhttp3.*;
@@ -9,6 +13,17 @@ import org.json.JSONObject;
 
 /** Android TLS trust and default system routing (including system VPN). */
 public final class Network implements AutoCloseable {
+    // Stable, credential-free markers consumed by the Python bridge. Never
+    // forward exception messages: they can contain URLs or request headers.
+    private static String failureReason(Throwable error) {
+        for (Throwable cause=error; cause!=null; cause=cause.getCause()) {
+            if (cause instanceof UnknownHostException) return "PASSPORT_NET_DNS";
+            if (cause instanceof SocketTimeoutException) return "PASSPORT_NET_TIMEOUT";
+            if (cause instanceof SSLException) return "PASSPORT_NET_TLS";
+            if (cause instanceof ConnectException) return "PASSPORT_NET_CONNECT";
+        }
+        return "PASSPORT_NET_IO";
+    }
     private final OkHttpClient client;
     public Network() {
         OkHttpClient.Builder builder=new OkHttpClient.Builder()
@@ -35,11 +50,13 @@ public final class Network implements AutoCloseable {
             byte[] bytes=output.toByteArray();
             if (bytes.length>1024*1024) throw new IOException("API 响应过大");
             return new JSONObject().put("status",r.code()).put("body",new String(bytes,java.nio.charset.StandardCharsets.UTF_8)).toString();
+        } catch (IOException error) {
+            throw new IOException(failureReason(error));
         }
     }
     public Channel open(String url,String headers) throws Exception {
         Channel c=new Channel(); c.socket=client.newWebSocket(request(url,headers).build(),c);
-        if (!c.opened.await(25,TimeUnit.SECONDS)) { c.close(); throw new IOException("Muse 连接超时"); }
+        if (!c.opened.await(25,TimeUnit.SECONDS)) { c.close(); throw new IOException("PASSPORT_NET_TIMEOUT"); }
         if (c.failure!=null) { c.close(); throw new IOException(c.failure); }
         return c;
     }
@@ -55,7 +72,7 @@ public final class Network implements AutoCloseable {
         }
         @Override public void onMessage(WebSocket ws,String text) { failure="Muse 返回非二进制协议"; close(); }
         @Override public void onFailure(WebSocket ws,Throwable t,Response r) {
-            failure=r==null?"Muse 网络连接失败":"Muse HTTP "+r.code(); closed.set(true); opened.countDown();
+            failure=r==null?failureReason(t):"PASSPORT_WS_HTTP_"+r.code(); closed.set(true); opened.countDown();
         }
         @Override public void onClosed(WebSocket ws,int code,String reason) { closed.set(true); opened.countDown(); }
         @Override public void onClosing(WebSocket ws,int code,String reason) { ws.close(code,null); closed.set(true); }

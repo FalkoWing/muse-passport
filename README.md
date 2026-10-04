@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 
-<!-- Modified for Muse Passport community distribution, 2026-10-03. -->
+<!-- Modified for Muse Passport community distribution, 2026-10-04. -->
 
 # Muse Passport
 
@@ -58,13 +58,13 @@ Passport BSP 来源与修改保留在 [UPSTREAM.md](esp32/components/passport_bs
 
 ## 下载与刷机
 
-从 [1.0.1 Release 下载页](https://github.com/FalkoWing/muse-passport/releases/tag/v1.0.1) 获取配套 APK 与固件，也可以在 [全部 Releases](https://github.com/FalkoWing/muse-passport/releases) 查看后续版本。当前 1.0.1 标记为预发布。源码不存安装包，封面仅用于玩法社区。
+从 [1.0.2 Release 下载页](https://github.com/FalkoWing/muse-passport/releases/tag/v1.0.2) 获取 APK 与安装包，也可以在 [全部 Releases](https://github.com/FalkoWing/muse-passport/releases) 查看后续版本。1.0.2 为 Android 连接诊断修复预发布版，修正 API 协议版本并提供具体失败环节；其中设备固件与 1.0.1 相同。**已有 1.0.1 用户只需覆盖安装新的发行 APK，无需重新刷固件或配对。** 源码不存安装包，封面仅用于玩法社区。
 
 | 文件 | 用途 |
 |---|---|
-| `Muse-Passport-1.0.1.apk` | 已签名、不可调试的 Android App |
-| `Muse-Passport-1.0.1.zip` | APK、四段固件、刷机参数、本说明、许可证和校验和 |
-| `Muse-Passport-1.0.1-full.bin` | 从地址 0 刷入的完整初始化镜像；社区刷机使用，**覆盖已有配置/配对，需要重新设置** |
+| `Muse-Passport-1.0.2.apk` | 已签名、不可调试的 Android 1.0.2 App |
+| `Muse-Passport-1.0.2.zip` | 新版 APK、原 1.0.1 四段固件、刷机参数、本说明、许可证和校验和 |
+| `Muse-Passport-1.0.2-full.bin` | 原 1.0.1 固件的完整初始化镜像；社区刷机使用，**覆盖已有配置/配对，需要重新设置** |
 | `SHA256SUMS` | Release 附件校验和；ZIP 内另有逐文件校验和 |
 
 发行 APK 证书 SHA-256：`0d304c4229c97b19fbaffe5423e294eb0a04ae38c029a453acfd41d4cadaf11c`。
@@ -81,10 +81,10 @@ python -m esptool --chip esp32c3 -p PORT -b 460800 read-flash 0 0x800000 passpor
 芯片检查会重启设备，不能代替板型确认。首次安装可用完整镜像：
 
 ```sh
-python -m esptool --chip esp32c3 -p PORT -b 460800 write-flash 0 Muse-Passport-1.0.1-full.bin
+python -m esptool --chip esp32c3 -p PORT -b 460800 write-flash 0 Muse-Passport-1.0.2-full.bin
 ```
 
-**已有 Muse 固件时优先用四段方式升级，保留 NVS 中的 token 和配对**：解压 ZIP，进入 `muse-passport-1.0.1/firmware/`，执行：
+**已有 Muse 固件且确需更新固件时，用四段方式升级，保留 NVS 中的 token 和配对**；从 1.0.1 升级到本次版本只需更新 App。需要刷机时解压 ZIP，进入 `muse-passport-1.0.2/firmware/`，执行：
 
 ```sh
 python -m esptool --chip esp32c3 -p PORT -b 460800 \
@@ -119,8 +119,8 @@ Passport 同时只能被一个 App 连接，官方 Muse App 的设备设置页�
 
 ## 常见问题与当前边界
 
-- **蓝牙已连接，Muse 未连接**：检查手机 Muse Passport App 的网络与 VPN 分应用规则，确认设备已设置有效 token、已绑定 Muse 账号。无需添加代理端口。设备与网络断开后会自动重试，可在 App 断开后重新连接。
-- **能看转录但没回复**：确认使用配套 1.0.1 App 与固件，并等待手机 Muse App 的回复；重新连接后再发新一轮。本轮阅读缓存不是长期聊天历史，App 进程结束或会话重建可能丢失。
+- **蓝牙已连接，Muse 未连接**：先升级到 App 1.0.2 并查看具体失败环节。DNS、超时、TLS 或网络连接错误需检查本应用的网络与 VPN 分应用规则；API HTTP 状态、账号无可用 VM、设备注册或回复订阅错误需按提示检查账号、配对或 Muse 服务。官方 Muse App 能访问服务，不代表所有连接错误都来自手机网络。无需添加代理端口；可在 App 断开后重新连接。
+- **能看转录但没回复**：确认使用 App 1.0.2 与兼容的 1.0.1 固件，并等待手机 Muse App 的回复；重新连接后再发新一轮。本轮阅读缓存不是长期聊天历史，App 进程结束或会话重建可能丢失。
 - **繁体或方块**：Muse 服务端决定识别文字与语言。扩展字库解决标准 Big5 显示，不强制服务端输出简体，也不提高识别准确率；生僻字、HKSCS 和 emoji 仍可能缺字。
 - **特别长的内容**：上下键按屏幕页码翻页；单条及本轮合并回复各有 64 KiB UTF-8 上限，手机最多缓存 32 条。超限全文看官方 Muse App。
 - **清除与转交设备**：App 可单独清除 SDK token；设备账号/Wi-Fi 重置不自动清除它。转交前分别清除 token 和账号配对。保存中断时重连检查状态，不把断线当作保存成功。

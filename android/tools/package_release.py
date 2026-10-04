@@ -11,7 +11,7 @@ import sys
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
-VERSION = '1.0.1'
+VERSION = '1.0.2'
 BUILD = ROOT / 'esp32/build-muse-folotoy-passport-release'
 APK = ROOT / 'android/app/build/outputs/apk/release/app-release.apk'
 OUT = ROOT / f'android/artifacts/muse-passport-{VERSION}'
@@ -65,6 +65,7 @@ def main():
         dest.parent.mkdir(parents=True,exist_ok=True)
         shutil.copy2(BUILD / name, dest)
     shutil.copy2(ROOT / 'README.md', OUT / '使用说明.md')
+    shutil.copy2(ROOT / 'android/releases' / f'v{VERSION}.md', OUT / '发行说明.md')
     icon = OUT / 'android/assets/muse-passport-icon.svg'
     icon.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(ROOT / 'android/assets/muse-passport-icon.svg', icon)

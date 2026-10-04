@@ -5,6 +5,7 @@ before the bridge resumes; neither logs nor APKs contain account credentials.
 """
 import asyncio
 import json
+import re
 import struct
 import threading
 from reply_cache import ReplyCache
@@ -14,6 +15,35 @@ from musegadget.noise import Header
 
 HELLO, CREDENTIALS, READY, OPEN, DATA, CANCEL, RESPONSE, ACK, TOKENS, ERROR = range(1, 11)
 MAX_RESPONSE = 1024 * 1024
+# Protocol version, independent of the Android app's release version.
+API_VERSION = "1.0.0"
+
+
+class MuseConnectionError(ConnectionError):
+    """Only locally generated, credential-free descriptions may be displayed."""
+
+
+def connection_failure(stage, error):
+    if isinstance(error, MuseConnectionError):
+        reason = str(error)
+    elif isinstance(error, (TimeoutError, asyncio.TimeoutError)):
+        reason = "等待 Muse 响应超时"
+    else:
+        # Chaquopy wraps Java exceptions. Match only our fixed markers; never
+        # display or log their raw text, HTTP bodies, URLs or credentials.
+        raw = str(error)
+        reasons = {
+            "PASSPORT_NET_DNS": "域名解析失败，请检查 Muse Passport 的网络及 VPN 分应用规则",
+            "PASSPORT_NET_TIMEOUT": "网络请求超时，请检查 Muse Passport 的网络及 VPN 分应用规则",
+            "PASSPORT_NET_TLS": "TLS 安全连接失败，请检查手机时间及 VPN 设置",
+            "PASSPORT_NET_CONNECT": "无法建立网络连接，请检查 Muse Passport 的网络及 VPN 分应用规则",
+            "PASSPORT_NET_IO": "网络传输中断，请检查 Muse Passport 的网络及 VPN 分应用规则",
+        }
+        reason = next((text for marker, text in reasons.items() if marker in raw), None)
+        if reason is None:
+            match = re.search(r"PASSPORT_WS_HTTP_([1-5][0-9]{2})(?![0-9])", raw)
+            reason = "Muse WebSocket HTTP " + match[1] if match else "连接协议异常 (%s)" % type(error).__name__
+    return "%s失败：%s；正在重试" % (stage, reason)
 
 
 def compact(obj):
@@ -88,11 +118,13 @@ class Subscription:
 
     def on_frame(self, frame):
         if frame.kind == "reset":
-            raise ConnectionError("Muse reply subscription reset")
+            raise MuseConnectionError("Muse 重置了回复订阅")
         if frame.kind == "response":
             if frame.value.status != 200:
-                self.session.bridge.status("Muse 拒绝回复订阅 (HTTP %d)" % frame.value.status)
-                raise PermissionError("Muse 拒绝回复订阅 (HTTP %d)" % frame.value.status)
+                message = "Muse 拒绝回复订阅 (HTTP %d)" % frame.value.status
+                if frame.value.status in (401, 403):
+                    raise PermissionError(message)
+                raise MuseConnectionError(message)
             data, end = frame.value.body, frame.value.end_body
             if not self.ready:
                 self.ready = True
@@ -102,7 +134,7 @@ class Subscription:
             data, end = frame.value.data, frame.value.end_body
         self.session.cache.feed(data)
         if end:
-            raise ConnectionError("Muse reply subscription ended")
+            raise MuseConnectionError("Muse 回复订阅已结束")
 
 
 class PhoneSession(LinkSession):
@@ -117,16 +149,27 @@ class PhoneSession(LinkSession):
         self.audio = {}
 
     def _handle(self, message):
+        # Avoid the upstream logger emitting the server's raw error object.
+        if (message.get("id") == self._register_id and message.get("method") is None
+                and message.get("error")):
+            raise MuseConnectionError("Muse 拒绝设备注册，请检查设备的账号绑定")
         result = super()._handle(message)
         if message.get("id") == self._register_id and message.get("method") is None:
-            if message.get("error"):
-                raise ConnectionError("Muse 拒绝设备注册")
             task = asyncio.create_task(self.subscribe())
             self._tasks.add(task)
             task.add_done_callback(self._tasks.discard)
         return result
 
+    async def _handshake(self, ws):
+        self.bridge.connection_stage = "Muse 加密握手"
+        return await super()._handshake(ws)
+
+    async def _open_control_stream(self):
+        self.bridge.connection_stage = "Muse 设备注册"
+        await super()._open_control_stream()
+
     async def subscribe(self):
+        self.bridge.connection_stage = "Muse 回复订阅"
         async with self._send_lock:
             frames = self._transport.encrypt_http_request("POST", "/chat/subscribe", b"{}",
                 headers=[Header("Content-Type", "application/json"), Header("Accept", "application/x-ndjson"),
@@ -216,6 +259,7 @@ class Bridge:
         self.connection_task = None
         self.token_committed = None
         self.stopping = False
+        self.connection_stage = "Muse 账号信息获取"
         self.thread = threading.Thread(target=self._run, daemon=True, name="MuseBridge")
         self.thread.start()
 
@@ -250,15 +294,20 @@ class Bridge:
     async def _http(self, method, path, auth, body=None):
         root = (self.credentials.get("api_url_v2") or "https://api.muse.ai").rstrip("/")
         result = json.loads(await asyncio.to_thread(self.network.http, method, root + path,
-            compact({"Authorization": auth, "X-API-Version": "1.0.1", "User-Agent": "MusePassport/1.0.1"}),
+            compact({"Authorization": auth, "X-API-Version": API_VERSION, "User-Agent": "MusePassport/1.0.2"}),
             compact(body) if body is not None else ""))
         try:
             payload = json.loads(result["body"])
         except (ValueError, KeyError):
+            if result["status"] == 200:
+                raise MuseConnectionError("Muse API 返回了无效的 JSON 响应") from None
             payload = {}
+        if not isinstance(payload, dict):
+            raise MuseConnectionError("Muse API 返回了无效的响应格式")
         return result["status"], payload
 
     async def _vms(self):
+        self.connection_stage = "Muse 账号信息获取"
         status, payload = await self._http("GET", "/fetch_vms", "Bearer " + self.credentials["access_token"])
         if status == 401:
             raw = self.credentials.get("refresh_token", "").rsplit(":", 1)[-1]
@@ -267,27 +316,36 @@ class Bridge:
             body = {"device_id": self.credentials["device_id"]}
             if self.credentials.get("sdk_token"):
                 body["sdk_token"] = self.credentials["sdk_token"]
+            self.connection_stage = "Muse 设备凭据更新"
             code, tokens = await self._http("POST", "/device_token/refresh", "Bearer hatch_refresh:" + raw, body)
             if code != 200:
-                raise PermissionError("Muse 凭据更新失败 (HTTP %d)，请检查配对" % code)
+                if code in (401, 403):
+                    raise PermissionError("Muse 凭据更新失败 (HTTP %d)，请在 Muse App 中检查配对" % code)
+                raise MuseConnectionError("Muse 凭据更新 HTTP %d" % code)
             tokens = tokens.get("payload", tokens)
-            if not tokens.get("access_token") or not tokens.get("refresh_token"):
-                raise ValueError("Muse 凭据响应不完整")
+            if not isinstance(tokens, dict) or not tokens.get("access_token") or not tokens.get("refresh_token"):
+                raise MuseConnectionError("Muse 凭据响应不完整")
             self.token_committed = self.loop.create_future()
             await self.emit(TOKENS, 0, compact({k: tokens[k] for k in ("access_token", "refresh_token")}).encode())
+            self.connection_stage = "Passport 凭据保存"
             await asyncio.wait_for(self.token_committed, 15)
             self.credentials.update(tokens)
+            self.connection_stage = "Muse 账号信息获取"
             status, payload = await self._http("GET", "/fetch_vms", "Bearer " + self.credentials["access_token"])
         if status != 200:
-            raise ConnectionError("Muse API HTTP %d" % status)
-        candidates = [v for v in payload.get("vm_list", []) if v.get("vm_id") and v.get("vm_auth_token")]
+            raise MuseConnectionError("Muse API HTTP %d" % status)
+        vm_list = payload.get("vm_list")
+        if not isinstance(vm_list, list):
+            raise MuseConnectionError("Muse API 响应缺少有效的 vm_list")
+        candidates = [v for v in vm_list if isinstance(v, dict) and v.get("vm_id") and v.get("vm_auth_token")]
         if not candidates:
-            raise ConnectionError("账号没有可用的 Muse VM")
+            raise MuseConnectionError("账号没有可用的 Muse VM，请在 Muse App 中检查账号状态")
         wanted = self.credentials.get("vm_id", "")
         return next((v for v in candidates if v["vm_id"] == wanted),
                     next((v for v in candidates if v.get("default")), candidates[0]))
 
     async def _connect(self, url, headers):
+        self.connection_stage = "Muse WebSocket 连接"
         return AndroidSocket(await asyncio.to_thread(self.network.open, url, compact(headers)))
 
     async def _connections(self):
@@ -303,18 +361,22 @@ class Bridge:
                     run_command=lambda *_: {"error": {"code": "unsupported", "message": "Remote commands are not supported"}},
                     connect=self._connect)
                 outcome = await self.session.run(asyncio.Event())
+                delay = 2
                 if outcome == Outcome.UNPAIRED:
                     raise PermissionError("Muse 已移除此设备，请重新配对")
-                delay = 2
+                if outcome == Outcome.FORBIDDEN:
+                    raise MuseConnectionError("Muse 拒绝设备会话")
+                if outcome == Outcome.AUTH_REJECTED:
+                    raise MuseConnectionError("Muse VM 凭据被拒绝")
+                raise MuseConnectionError("Muse 会话已结束")
             except asyncio.CancelledError:
                 raise
             except PermissionError as error:
                 self.status(str(error))
                 await self.emit(ERROR, 0, str(error).encode())
                 return
-            except Exception:
-                # Exception text may contain URL query strings or bearer data.
-                self.status("Muse 连接失败，正在重试；请检查手机网络")
+            except Exception as error:
+                self.status(connection_failure(self.connection_stage, error))
             finally:
                 self.session = None
             await self.emit(ERROR, 0, b"MUSE CONNECTION LOST")
@@ -337,7 +399,7 @@ class Bridge:
                     if json.loads(data).get("ok"):
                         self.token_committed.set_result(None)
                     else:
-                        self.token_committed.set_exception(ConnectionError("Passport 无法保存更新后的凭据"))
+                        self.token_committed.set_exception(MuseConnectionError("Passport 无法保存更新后的凭据"))
             elif kind in (OPEN, DATA, CANCEL):
                 try:
                     if self.session is None:
