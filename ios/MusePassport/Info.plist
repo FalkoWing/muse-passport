@@ -18,6 +18,8 @@
 	<array>
 		<string>FFFF</string>
 	</array>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>用于连接你的 Passport，在设备与 Muse 服务之间转发语音和文字。</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 </dict>
