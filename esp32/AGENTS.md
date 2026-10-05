@@ -77,8 +77,9 @@ Muse requires tokens. Never commit the token or print it in full.
 
 Passport BLE public releases use `tools/passport.sh release-build`, which creates
 an independent token-free configuration. Users set their SDK token from the
-Muse Passport Android App over bonded, authenticated BLE. `ble-build` retains
-the private build default for existing developers; never publish that binary.
+Muse Passport companion app (Android or iOS) over bonded, authenticated BLE.
+`ble-build` retains the private build default for existing developers; never
+publish that binary.
 The NVS `sdk_token` override takes precedence, including an explicit empty clear.
 Saving/clearing requires commit and readback, then reboot before changing the
 pairing/refresh pointer. Ordinary NVS is not encrypted at rest in this profile.
