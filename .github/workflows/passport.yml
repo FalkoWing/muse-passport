@@ -58,3 +58,22 @@ jobs:
           ./tools/build.sh assembleDebug lintDebug
           javac -d /tmp/passport-protocol app/src/main/java/ai/muse/passport/BridgeProtocol.java tests/ProtocolTest.java
           java -cp /tmp/passport-protocol ProtocolTest
+      - name: Check the iOS test vectors match the reference implementations
+        shell: bash
+        run: |
+          python -m pip install 'cryptography==42.0.8'
+          PYTHONPATH=linux/src:android/app/src/main/python python ios/tools/generate_vectors.py --check
+  ios:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Test the bridge core
+        working-directory: ios/PassportBridge
+        run: swift test
+      - name: Build the app without signing
+        working-directory: ios/MusePassport
+        run: |
+          xcodebuild -project MusePassport.xcodeproj -scheme MusePassport \
+            -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build

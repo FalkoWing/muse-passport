@@ -6,8 +6,11 @@ Copyright (c) Meta Platforms, Inc. and affiliates.
 Upstream base checked out locally: b9008ab.
 
 Community additions and integration changes include the Android BLE/network
-companion, FoloToy AI Passport board support, Chinese UI, audio transport,
-text paging, and runtime SDK token configuration. The root README and public
+companion, the iOS companion, FoloToy AI Passport board support, Chinese UI,
+audio transport, text paging, and runtime SDK token configuration. The iOS
+companion's Noise protocol sources under ios/PassportBridge are a Swift port
+of the upstream Python modules in linux/src/musegadget/noise and keep the
+upstream copyright notice. The root README and public
 Passport documentation have been adapted for community distribution.
 
 FoloToy BSP and related test stubs retain their MIT notices. Generated Source
