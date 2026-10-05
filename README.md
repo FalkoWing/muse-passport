@@ -84,6 +84,8 @@ python -m esptool --chip esp32c3 -p PORT -b 460800 read-flash 0 0x800000 passpor
 python -m esptool --chip esp32c3 -p PORT -b 460800 write-flash 0 Muse-Passport-1.0.2-full.bin
 ```
 
+FoloToy AI Passport 也可以不用命令行，直接在 [AI Passport 玩法社区](https://ai-passport.folotoy.cn/plays/919) 的 Muse Passport 页面按提示写入固件。社区提供的是同一份完整镜像，同样会覆盖已有配置与配对。
+
 **已有 Muse 固件且确需更新固件时，用四段方式升级，保留 NVS 中的 token 和配对**；从 1.0.1 升级到本次版本只需更新 App。需要刷机时解压 ZIP，进入 `muse-passport-1.0.2/firmware/`，执行：
 
 ```sh
@@ -98,8 +100,8 @@ python -m esptool --chip esp32c3 -p PORT -b 460800 \
 1. 先在手机登录官方 **Muse App**，确认网络可访问 Muse 服务。从上方 Release 下载页安装 APK，打开 **Muse Passport**、开启蓝牙并允许所需权限。发行版与旧调试版签名不同，不能覆盖安装；切换须先卸载旧 App，会清除手机设置与本轮缓存，但不会清除设备配对。以后发行更新可以覆盖安装。
 2. 点击“选择设备”，选择 `MuseGadget-XXXXXX`，点击“连接 Passport”。系统蓝牙配对弹窗要求 PIN 时，输入 Passport 屏幕上的六位数字。
 3. 用自己的 Muse 账号登录 [Muse Gadgets 的 SDK token 页面](https://gadgets.muse.ai/settings/sdk-tokens)，创建个人 SDK token。回到伴侣 App，打开“设备设置 → 设置 SDK token”，粘贴自己的 `mgst_…` token，点击“保存到设备”。设备保存后重启，App 重连后检查“SDK token 已设置”。公开固件不包含维护者或其他用户的 token。
-4. 若设备已绑定 Muse 账号，等待“Muse 已连接”即可，跳过首次绑定。全新设备先在伴侣 App 点“断开连接”；打开官方 Muse App，在设置中进入设备页面，开启开发者模式，点右上角“＋”添加同名 `MuseGadget-XXXXXX` 设备。按提示选择可访问 Muse 的 Wi-Fi、输入密码并确认；设备要求确认时按 OK。初始化完成后退出官方 App 的设备设置页，再回到 Muse Passport 点“连接 Passport”，等待“Muse 已连接”。这对应[官方指南](https://github.com/facebookincubator/muse-gadget-sdk/blob/main/esp32/README.md#4-set-it-up-with-muse)的 Settings → Devices → Developer mode / Add Device 流程；不同版本的界面文案可能略有差异。
-5. **首次官方账号初始化仍需 Wi-Fi 设置步骤，尚未实现纯 BLE 首次配对**；官方流程连接失败时回到设备设置，重新选择可访问 Muse 的网络、输入密码并重试。账号初始化完成后的日常对话才可以只使用手机网络。SDK token 设置不是账号绑定，系统蓝牙绑定也不是 Muse 账号绑定。
+4. 若设备已绑定 Muse 账号，等待“Muse 已连接”即可，跳过首次绑定。全新设备先在伴侣 App 点“断开连接”；打开官方 Muse App，在设置中进入设备页面，开启开发者模式，点右上角“＋”添加同名 `MuseGadget-XXXXXX` 设备。按提示选择 Wi-Fi、输入密码并确认；设备要求确认时按 OK。初始化完成后退出官方 App 的设备设置页，再回到 Muse Passport 点“连接 Passport”，等待“Muse 已连接”。这对应[官方指南](https://github.com/facebookincubator/muse-gadget-sdk/blob/main/esp32/README.md#4-set-it-up-with-muse)的 Settings → Devices → Developer mode / Add Device 流程；不同版本的界面文案可能略有差异。
+5. **首次官方账号初始化仍需 Wi-Fi 设置步骤，尚未实现纯 BLE 首次配对**；官方流程连接失败时回到设备设置，重新选择网络、输入密码并重试。账号初始化完成后的日常对话才可以只使用手机网络。SDK token 设置不是账号绑定，系统蓝牙绑定也不是 Muse 账号绑定。
 
 Passport 同时只能被一个 App 连接，官方 Muse App 的设备设置页与伴侣 App 不能同时占用它。普通聊天页可以查看对话。公开包不继承编译时的私有 token：从旧开发固件升级前，请先通过新 App 保存自己的 token。
 
