@@ -181,7 +181,7 @@ swift test
 | `linux/src/musegadget/` | Android 依赖的上游 Noise/API 协议模块，必须随源码保留 |
 | `NOTICE`、`THIRD_PARTY.md` | 来源、第三方许可与资源例外，须保留 |
 
-`passport` 分支为本项目开发与发行分支；`main` 保留上游 SDK，便于比较与同步。上游板型文档、许可和开发规范保留原结构；使用说明集中在本文。构建输出、个人需求/开发经验文档、原机/NVS 备份、凭据和社区封面均不进入源码仓库。
+`passport` 分支为本项目开发与发行分支；上游 SDK 的更新按需从[官方仓库](https://github.com/facebookincubator/muse-gadget-sdk)合并。上游板型文档、许可和开发规范保留原结构；使用说明集中在本文。构建输出、个人需求/开发经验文档、原机/NVS 备份、凭据和社区封面均不进入源码仓库。
 
 ## 隐私与许可证
 

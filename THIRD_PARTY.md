@@ -17,7 +17,7 @@ Muse Passport 基于 Muse Gadget SDK，保留原作者的版权、许可证与�
 
 ## 上游资源例外
 
-上游 README 明确指出 **Jollybot avatar 不在 Apache-2.0 许可范围内**。`esp32/avatar/` 中的原始图像与相关生成素材应保留上游版权说明，不能根据根目录 LICENSE 推断可自由复用。保留在 Fork 的上游文件不意味着本项目重新授权这些素材。社区 App 使用 `android/assets/muse-passport-icon.svg`、对应 Android 矢量资源和由它渲染的 iOS 图标；Passport 界面采用文字状态，宣传素材不使用 Jollybot。
+上游 README 明确指出 **Jollybot avatar 不在 Apache-2.0 许可范围内**。`esp32/avatar/` 中的原始图像与相关生成素材应保留上游版权说明，不能根据根目录 LICENSE 推断可自由复用。保留在本仓库的上游文件不意味着本项目重新授权这些素材。社区 App 使用 `android/assets/muse-passport-icon.svg`、对应 Android 矢量资源和由它渲染的 iOS 图标；Passport 界面采用文字状态，宣传素材不使用 Jollybot。
 
 ## 共享开发签名密钥
 
