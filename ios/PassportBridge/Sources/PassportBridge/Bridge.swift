@@ -68,7 +68,6 @@ public actor Bridge {
     private let userAgent: String
     private let timing: BridgeTiming
     private let onState: @Sendable (BridgeState) -> Void
-    private let log: @Sendable (String) -> Void
     private let toDevice: AsyncStream<(UInt8, UInt16, Data)>.Continuation
     private let commands: AsyncStream<BridgeMessage>.Continuation
     private var workers: [Task<Void, Never>] = []
@@ -94,16 +93,13 @@ public actor Bridge {
     private var settingsRequest: UInt16 = 0
 
     /// - Parameter send: writes one message to the device; false once Bluetooth is gone.
-    /// - Parameter log: temporary diagnostics for the acceptance run; never given a credential.
     public init(network: any MuseNetwork, userAgent: String, timing: BridgeTiming = BridgeTiming(),
                 send: @escaping @Sendable (UInt8, UInt16, Data) async -> Bool,
-                onState: @escaping @Sendable (BridgeState) -> Void,
-                log: @escaping @Sendable (String) -> Void = { _ in }) {
+                onState: @escaping @Sendable (BridgeState) -> Void) {
         self.network = network
         self.userAgent = userAgent
         self.timing = timing
         self.onState = onState
-        self.log = log
         let (outgoing, toDevice) = AsyncStream<(UInt8, UInt16, Data)>.makeStream()
         let (incoming, commands) = AsyncStream<BridgeMessage>.makeStream(bufferingPolicy: .bufferingOldest(512))
         self.toDevice = toDevice
@@ -191,7 +187,6 @@ public actor Bridge {
             default: try cancel(message)
             }
         } catch {
-            log("请求 id=\(message.id) 失败：\((error as? NoiseError)?.reason ?? failureReason(error))")
             unfinished[message.id] = nil
             respond(message.id, status: -1)
             if error is NoiseError, let session { ended(session, error) }
@@ -211,7 +206,6 @@ public actor Bridge {
             return
         }
         guard base == "/chat/stream", let end = info["end"] as? Bool else { throw BridgeFailure.transient("不支持的请求") }
-        log("一轮开始 id=\(message.id)，Muse 此刻已连接=\(session?.ready == true ? "是" : "否")")
         if !end { unfinished[message.id] = [message] }
         try await ensureSession()
         try start(message)
@@ -257,7 +251,6 @@ public actor Bridge {
     private func resend(_ id: UInt16) async throws {
         try await ensureSession()
         guard let messages = unfinished[id] else { throw BridgeFailure.transient("请求已结束") }
-        log("Muse 重连后补发请求 id=\(id)，已收到的 \(messages.count - 1) 段数据一并重发")
         try start(messages[0])
         try messages.dropFirst().forEach(send)
     }

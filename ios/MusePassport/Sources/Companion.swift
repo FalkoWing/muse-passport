@@ -22,19 +22,12 @@ final class Companion: NSObject {
     static let shared = Companion()
 
     private(set) var accessoryName: String?
-    private(set) var linkStatus = "尚未添加设备" {
-        didSet { if linkStatus != oldValue { Diagnostics.shared.log("界面状态：\(linkStatus)") } }
-    }
+    private(set) var linkStatus = "尚未添加设备"
     /// Present while a Passport is connected and bridged.
-    private(set) var bridgeState: BridgeState? {
-        didSet {
-            if let status = bridgeState?.status, status != oldValue?.status { Diagnostics.shared.log("界面状态：\(status)") }
-        }
-    }
+    private(set) var bridgeState: BridgeState?
     var bridgeEnabled = UserDefaults.standard.object(forKey: "bridgeEnabled") as? Bool ?? true {
         didSet {
             UserDefaults.standard.set(bridgeEnabled, forKey: "bridgeEnabled")
-            Diagnostics.shared.log("桥接开关=\(bridgeEnabled ? "开" : "关")")
             bridgeEnabled ? connect() : release()
         }
     }
@@ -88,9 +81,7 @@ final class Companion: NSObject {
         descriptor.bluetoothCompanyIdentifier = ASBluetoothCompanyIdentifier(rawValue: 0xFFFF)
         descriptor.supportedOptions = .bluetoothPairingLE
         let item = ASPickerDisplayItem(name: "Muse Passport", productImage: Self.productImage, descriptor: descriptor)
-        session.showPicker(for: [item]) { error in
-            if let error { Diagnostics.shared.log("配件面板返回错误：\(Diagnostics.describe(error))") }
-        }
+        session.showPicker(for: [item]) { _ in }
     }
 
     func removeAccessory() {
@@ -110,7 +101,6 @@ final class Companion: NSObject {
     }()
 
     private func handle(_ event: ASAccessoryEvent) {
-        Diagnostics.shared.log("\(Diagnostics.describe(event))，已授权配件 \(session.accessories.count) 个")
         switch event.eventType {
         case .activated, .accessoryAdded, .accessoryChanged, .pickerDidDismiss:
             let accessory = session.accessories.first
@@ -212,8 +202,7 @@ final class Companion: NSObject {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
         let bridge = Bridge(network: network, userAgent: "MusePassport/\(version)", send: { [weak self] type, id, body in
             await self?.write(type, id, body, epoch: epoch) ?? false
-        }, onState: { states.yield($0) }, log: { Diagnostics.shared.log($0) })
-        Diagnostics.shared.log("开始桥接")
+        }, onState: { states.yield($0) })
         self.bridge = bridge
         self.incoming = incoming
         self.states = states
@@ -226,7 +215,6 @@ final class Companion: NSObject {
 
     private func endBridge() {
         epoch += 1
-        if bridge != nil { Diagnostics.shared.log("结束桥接") }
         if let bridge { Task { await bridge.stop() } }
         bridge = nil
         incoming?.finish()
@@ -274,18 +262,13 @@ final class Companion: NSObject {
 
     /// Writes one message and returns once the device has accepted all of it.
     private func write(_ type: UInt8, _ id: UInt16, _ body: Data, epoch: Int) async -> Bool {
-        guard epoch == self.epoch, let packets = packets(type, id, body) else {
-            Diagnostics.shared.sent(type, id, body, ok: false)
-            return false
-        }
-        let ok: Bool = await withCheckedContinuation { done in
+        guard epoch == self.epoch, let packets = packets(type, id, body) else { return false }
+        return await withCheckedContinuation { done in
             for (index, packet) in packets.enumerated() {
                 writes.append(Write(packet: packet, done: index == packets.count - 1 ? done : nil))
             }
             pump()
         }
-        Diagnostics.shared.sent(type, id, body, ok: ok)
-        return ok
     }
 
     private func pump() {
@@ -299,7 +282,6 @@ final class Companion: NSObject {
     private func received(_ packet: Data) {
         do {
             guard let message = try frames.feed(packet) else { return }
-            Diagnostics.shared.received(message)
             // The device waits about a second for this, so it jumps the queue.
             if let ack = packets(BridgeMessageType.ack, message.sequence, Data())?.first {
                 writes.insert(Write(packet: ack, done: nil), at: 0)
@@ -311,7 +293,6 @@ final class Companion: NSObject {
             }
             incoming?.yield(message)
         } catch {
-            Diagnostics.shared.log("帧错误：\(error)")
             restart("蓝牙数据顺序错误，正在重连…")
         }
     }
@@ -319,30 +300,24 @@ final class Companion: NSObject {
 
 extension Companion: @preconcurrency CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        Diagnostics.shared.log("手机蓝牙状态=\(central.state.rawValue)（5 表示已开启）")
         if central.state != .poweredOn, bridge != nil { endBridge() }
         connect()
     }
 
     func centralManager(_ central: CBCentralManager, willRestoreState dict: [String: Any]) {
-        guard let restored = (dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral])?.first else {
-            return Diagnostics.shared.log("系统恢复蓝牙状态，但没有外设")
-        }
+        guard let restored = (dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral])?.first else { return }
         peripheral = restored
         restored.delegate = self
         // Only adopt cached handles here; writes wait for the powered-on callback.
         rx = characteristic(GATT.rx, of: restored)
-        Diagnostics.shared.log("系统恢复蓝牙状态：外设连接状态=\(restored.state.rawValue)（2 表示已连接），写特征已缓存=\(rx != nil ? "是" : "否")")
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
-        Diagnostics.shared.log("蓝牙已连接，单包最大 \(peripheral.maximumWriteValueLength(for: .withoutResponse)) 字节")
         linkStatus = "蓝牙已连接，正在准备…"
         peripheral.discoverServices([GATT.bridge])
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
-        Diagnostics.shared.log("蓝牙连接失败：\(error.map(Diagnostics.describe) ?? "未知")")
         // An erased device has forgotten this phone. Trying again cannot
         // succeed and would keep everyone else off its only connection.
         if (error as? CBError)?.code == .peerRemovedPairingInformation {
@@ -354,7 +329,6 @@ extension Companion: @preconcurrency CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
-        Diagnostics.shared.log("蓝牙已断开：\(error.map(Diagnostics.describe) ?? "正常")")
         endBridge()
         connect()
     }
@@ -362,7 +336,6 @@ extension Companion: @preconcurrency CBCentralManagerDelegate {
 
 extension Companion: @preconcurrency CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
-        if let error { Diagnostics.shared.log("发现服务失败：\(Diagnostics.describe(error))") }
         guard let service = peripheral.services?.first(where: { $0.uuid == GATT.bridge }) else {
             linkStatus = "Passport 需要刷入蓝牙桥接固件"
             return
@@ -371,13 +344,11 @@ extension Companion: @preconcurrency CBPeripheralDelegate {
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
-        if let error { Diagnostics.shared.log("发现特征失败：\(Diagnostics.describe(error))") }
         rx = characteristic(GATT.rx, of: peripheral)
         greet(peripheral)
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
-        Diagnostics.shared.log("订阅设备通知：\(error.map(Diagnostics.describe) ?? "成功")")
         if error != nil { return restart("蓝牙认证失败，请重新添加设备") }
         greet(peripheral)
     }
@@ -385,7 +356,6 @@ extension Companion: @preconcurrency CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
         let done = inflight
         inflight = nil
-        if let done { Diagnostics.shared.wrote(done.packet, error) }
         if error != nil {
             done?.done?.resume(returning: false)
             return restart("蓝牙发送失败，正在重连…")

@@ -6,7 +6,6 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         // Also runs when the system relaunches the app in the background for a
         // Bluetooth event, so the bridge must come up without any window.
-        Diagnostics.shared.launched()
         Companion.shared.start()
         return true
     }
