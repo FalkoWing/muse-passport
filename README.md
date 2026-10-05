@@ -20,9 +20,9 @@ limitations under the License.
 
 <img src="android/assets/muse-passport-icon.svg" width="88" alt="Muse Passport 图标">
 
-把随身设备变成 Muse 对话终端：按住 OK 说话，松开后阅读自己的语音转录与 Muse 文字回复；长内容可以上下翻页，也能回看本轮转录。设备通过蓝牙借用 Android 手机网络，目前已在 **FoloToy AI Passport** 实机验证。
+把随身设备变成 Muse 对话终端：按住 OK 说话，松开后阅读自己的语音转录与 Muse 文字回复；长内容可以上下翻页，也能回看本轮转录。设备通过蓝牙借用手机网络，目前已在 **FoloToy AI Passport** 实机验证。
 
-这是基于 [Muse 官方 Gadgets 开源硬件方案](https://gadgets.muse.ai/) 与 [Muse Gadget SDK](https://github.com/facebookincubator/muse-gadget-sdk) 的社区衍生项目，包含设备固件与 Android 伴侣 App。与 Meta、Muse 或 FoloToy 官方没有隶属或背书关系。
+这是基于 [Muse 官方 Gadgets 开源硬件方案](https://gadgets.muse.ai/) 与 [Muse Gadget SDK](https://github.com/facebookincubator/muse-gadget-sdk) 的社区衍生项目，包含设备固件、Android 伴侣 App 与 iOS 伴侣 App。与 Meta、Muse 或 FoloToy 官方没有隶属或背书关系。
 
 ## 为什么需要 Android 伴侣 App
 
@@ -50,7 +50,7 @@ flowchart LR
 | 屏幕 | 阅读功能必需；实测 ST7789P3 240×320 竖屏。其他尺寸/控制器需适配驱动、布局、字体与分页 |
 | 按键 | 说话键与上下导航；实测三键 ADC 输入。替代 GPIO 按键需适配按下、松开及长按事件 |
 | 可选硬件 | 电池与电量计适合随身使用；扬声器不是当前文字回复功能的必要条件，尚未实现 Muse 回复语音播放 |
-| 手机 | Android 8.0+，arm64；实测 Pixel 10 Pro XL / Android 17；iOS 伴侣版尚未实现 |
+| 手机 | Android 8.0+，arm64；实测 Pixel 10 Pro XL / Android 17。iOS 26+；实测 iPhone 14 Pro / iOS 27 |
 | Muse | 自己的账号、官方 Muse App、[Gadget SDK token](https://gadgets.muse.ai/settings/sdk-tokens)，且手机 App 能访问 Muse 服务 |
 | 刷机 | USB 数据线与电脑；发布固件只适用于 FoloToy AI Passport |
 
@@ -103,6 +103,19 @@ python -m esptool --chip esp32c3 -p PORT -b 460800 \
 
 Passport 同时只能被一个 App 连接，官方 Muse App 的设备设置页与伴侣 App 不能同时占用它。普通聊天页可以查看对话。公开包不继承编译时的私有 token：从旧开发固件升级前，请先通过新 App 保存自己的 token。
 
+## 在 iPhone 上使用
+
+iOS 伴侣 App 以源码提供，需要用 Mac 自行构建并安装到自己的 iPhone；固件与 Android 相同，按“下载与刷机”刷入。需要 Xcode 26 或更新、iOS 26 或更新和一个 Apple ID。免费 Apple ID 也可以，签名 7 天后过期，届时用 Xcode 重新运行一次。
+
+1. 克隆本仓库，用 Xcode 打开 `ios/MusePassport/MusePassport.xcodeproj`。在 MusePassport target 的 Signing & Capabilities 里把 Team 换成自己的，把 Bundle Identifier 改成自己的唯一标识，然后选择自己的 iPhone 运行。
+2. 打开 **Muse Passport**，点“添加设备”，在系统配件面板里选中 Passport，输入设备屏幕上的六位数字完成配对。
+3. 点“设置 SDK token”，粘贴自己的 `mgst_…` token，点“保存到设备”；设备重启并重连后显示“SDK token 已设置”。token 的创建方法见上一节第 3 步，App 不保存也不回显 token。
+4. 若设备已绑定 Muse 账号，等待“Muse 已连接”即可。全新设备先关闭“桥接”开关，按上一节第 4、5 步在官方 Muse App 里完成账号绑定与 Wi-Fi 初始化，再回到 Muse Passport 打开“桥接”。
+
+桥接默认常开：保持蓝牙和手机网络开启，锁屏、App 被系统回收或被手动划掉后仍可对话，设备重新开机后自动恢复，不必再打开 App。要在官方 Muse App 里设置设备时，先关闭“桥接”。“移除设备”会同时删除系统蓝牙配对，不影响设备上的账号绑定和 SDK token。下一节的按键操作同样适用；iOS 没有常驻通知，用“桥接”开关代替“断开连接”。
+
+已在 iPhone 14 Pro / iOS 27 实测前台对话、锁屏空闲 10 分钟后对话、设备断电重开后自动恢复、Wi-Fi 与蜂窝网络切换，以及 App 被系统回收或手动划掉后的对话；全新设备完整初始化和在 iOS App 里保存 token 仍需进一步实测。
+
 ## 日常对话与按键
 
 看到“Muse 已连接”后，按住 OK 自然说话，松开发送，等待转录与文字回复。手机需留在蓝牙连接范围内，伴侣 App 需保持网络可用。每次新录音替换设备上的上一轮内容；完整聊天记录请在同一账号的官方 Muse App 查看。
@@ -125,11 +138,11 @@ Passport 同时只能被一个 App 连接，官方 Muse App 的设备设置页�
 - **特别长的内容**：上下键按屏幕页码翻页；单条及本轮合并回复各有 64 KiB UTF-8 上限，手机最多缓存 32 条。超限全文看官方 Muse App。
 - **清除与转交设备**：App 可单独清除 SDK token；设备账号/Wi-Fi 重置不自动清除它。转交前分别清除 token 和账号配对。保存中断时重连检查状态，不把断线当作保存成功。
 
-当前不提供 iOS 伴侣、回复语音播放或设备 OTA。熄屏只关闭背光，不代表完整低功耗休眠。已验证正常语速语音、简繁中文显示、本轮转录、回复及分页；全新设备完整初始化、App 写入真实 token 后重启重连、长期锁屏、跨手机与网络切换、续航仍需进一步实测，因此首次发行标记为预发布。
+当前不提供回复语音播放或设备 OTA。熄屏只关闭背光，不代表完整低功耗休眠。已验证正常语速语音、简繁中文显示、本轮转录、回复及分页；全新设备完整初始化、App 写入真实 token 后重启重连、长期锁屏、跨手机与网络切换、续航仍需进一步实测，因此首次发行标记为预发布。
 
 ## 开发与构建
 
-固件固定 **ESP-IDF 6.0.1**；Android 使用 **JDK 17**、Android SDK 36 / Build Tools 35.0.0、Python 3.13，Gradle 8.13、AGP 8.13.2、Chaquopy 17.0.0。构建脚本默认 macOS Homebrew 路径；其他安装设置 `JAVA_HOME`、`ANDROID_HOME`、`PASSPORT_BUILD_PYTHON`；Windows 可直接用 `gradlew.bat`。IDF 自定义路径设置 `IDF_EXPORT` 或先激活该版本。
+固件固定 **ESP-IDF 6.0.1**；Android 使用 **JDK 17**、Android SDK 36 / Build Tools 35.0.0、Python 3.13，Gradle 8.13、AGP 8.13.2、Chaquopy 17.0.0；iOS 使用 **Xcode 26** 或更新，只依赖系统框架。构建脚本默认 macOS Homebrew 路径；其他安装设置 `JAVA_HOME`、`ANDROID_HOME`、`PASSPORT_BUILD_PYTHON`；Windows 可直接用 `gradlew.bat`。IDF 自定义路径设置 `IDF_EXPORT` 或先激活该版本。
 
 ```sh
 git clone --branch passport https://github.com/FalkoWing/muse-passport.git
@@ -152,6 +165,8 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 PYTHONPATH=../linux/src:app/src/main/python python3 -m unittest discover -s tests -v
 javac -d /tmp/passport-protocol app/src/main/java/ai/muse/passport/BridgeProtocol.java tests/ProtocolTest.java
 java -cp /tmp/passport-protocol ProtocolTest
+# iOS 桥接核心测试，在 ios/PassportBridge/ 下执行，不需要模拟器
+swift test
 ```
 
 测试中的生产 C 阅读解析器需要 ESP-IDF 已获取的 cJSON 组件。主机测试覆盖音频编码、协议、回复关联、分页、字库、按键和 token 存储；不能代替真实 BLE、Muse 服务和续航测试。修改共享 SDK/UI 时，还需构建其他板型做回归。
@@ -159,6 +174,7 @@ java -cp /tmp/passport-protocol ProtocolTest
 | 路径 | 内容 |
 |---|---|
 | `android/` | 伴侣 App、自有图标、构建和测试 |
+| `ios/` | iOS 伴侣 App：Swift 桥接核心、App 工程和测试向量生成脚本 |
 | `esp32/` | 官方 SDK 基础、Passport BSP/固件/字库和测试 |
 | `linux/src/musegadget/` | Android 依赖的上游 Noise/API 协议模块，必须随源码保留 |
 | `NOTICE`、`THIRD_PARTY.md` | 来源、第三方许可与资源例外，须保留 |
