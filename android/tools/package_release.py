@@ -11,10 +11,17 @@ import sys
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
-VERSION = '1.0.2'
+VERSION = '1.0.3'
+# Version of the Android app in this package. When it is not VERSION the app is
+# unchanged, so that release's published APK is packaged again, not a rebuild:
+#   gh release download v1.0.2 -p '*.apk' -D android/artifacts
+APK_VERSION = '1.0.2'
+APK_SHA256 = 'd987c79c743027fbd58e87247aba7a43621759968e9f8f6731c9accd1520ed5d'
 BUILD = ROOT / 'esp32/build-muse-folotoy-passport-release'
-APK = ROOT / 'android/app/build/outputs/apk/release/app-release.apk'
 OUT = ROOT / f'android/artifacts/muse-passport-{VERSION}'
+PUBLISHED_APK = OUT.parent / f'Muse-Passport-{APK_VERSION}.apk'
+APK = (ROOT / 'android/app/build/outputs/apk/release/app-release.apk'
+       if APK_VERSION == VERSION else PUBLISHED_APK)
 
 
 def configs(path):
@@ -27,9 +34,12 @@ def main():
                 'CONFIG_HOMEHUB_WIFI_PASSWORD', 'CONFIG_HOMEHUB_AUTH_TOKEN'):
         if config.get(key, ''):
             raise SystemExit(f'Public configuration must leave {key} empty')
-    metadata = json.loads((APK.parent / 'output-metadata.json').read_text())
-    if metadata['elements'][0]['versionName'] != VERSION:
-        raise SystemExit('APK version mismatch')
+    if APK_VERSION == VERSION:
+        metadata = json.loads((APK.parent / 'output-metadata.json').read_text())
+        if metadata['elements'][0]['versionName'] != VERSION:
+            raise SystemExit('APK version mismatch')
+    elif hashlib.sha256(APK.read_bytes()).hexdigest() != APK_SHA256:
+        raise SystemExit('APK is not the published release')
     if not (BUILD / 'muse-gadget.bin').stat().st_size < 0x3e0000:
         raise SystemExit('Passport app exceeds its OTA slot')
     if (ROOT / 'esp32/build-muse-folotoy-passport-ble/partition_table/partition-table.bin').exists():
@@ -59,7 +69,7 @@ def main():
     if OUT.exists():
         shutil.rmtree(OUT)
     OUT.mkdir(parents=True)
-    shutil.copy2(APK, OUT / f'Muse-Passport-{VERSION}.apk')
+    shutil.copy2(APK, OUT / PUBLISHED_APK.name)
     for name in firmware_files:
         dest = OUT / 'firmware' / name
         dest.parent.mkdir(parents=True,exist_ok=True)
@@ -123,9 +133,9 @@ ESP-IDF 6.0.1 and components carry their own Apache/MIT/BSD notices, including N
         raise SystemExit('Merged public image contains unexpected NVS data')
     if any(secret in image for secret in secrets):
         raise SystemExit('Private value detected in merged firmware; stopped')
-    standalone_apk = OUT.parent / f'Muse-Passport-{VERSION}.apk'
-    shutil.copy2(APK, standalone_apk)
-    attachments = (standalone_apk, archive, merged)
+    if APK != PUBLISHED_APK:
+        shutil.copy2(APK, PUBLISHED_APK)
+    attachments = (PUBLISHED_APK, archive, merged)
     (OUT.parent / 'SHA256SUMS').write_text(''.join(
         f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}\n'
         for p in attachments))
