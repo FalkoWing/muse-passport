@@ -11,7 +11,7 @@ import sys
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
-VERSION = '1.0.3'
+VERSION = '1.0.4'
 # Version of the Android app in this package. When it is not VERSION the app is
 # unchanged, so that release's published APK is packaged again, not a rebuild:
 #   gh release download v1.0.2 -p '*.apk' -D android/artifacts
