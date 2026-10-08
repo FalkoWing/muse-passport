@@ -58,13 +58,13 @@ Passport BSP 来源与修改保留在 [UPSTREAM.md](esp32/components/passport_bs
 
 ## 下载与刷机
 
-从 [1.0.3 Release 下载页](https://github.com/FalkoWing/muse-passport/releases/tag/v1.0.3) 获取 APK 与安装包，也可以在 [全部 Releases](https://github.com/FalkoWing/muse-passport/releases) 查看后续版本。1.0.3 是固件修复预发布版：1.0.1 固件刷入全新设备后无法完成首次账号绑定，在官方 Muse App 里添加设备时连上约 2 秒就断开，1.0.3 固件修复了这个问题。Android 伴侣 App 没有变化，仍是 1.0.2。**设备已绑定账号并能正常对话的不必升级；账号绑定不上的设备请刷入 1.0.3 固件。** iOS 伴侣 App 不在 Release 里，通过 TestFlight 安装，见“在 iPhone 上使用”。源码不存安装包，封面仅用于玩法社区。
+从 [1.0.4 Release 下载页](https://github.com/FalkoWing/muse-passport/releases/tag/v1.0.4) 获取 APK 与安装包，也可以在 [全部 Releases](https://github.com/FalkoWing/muse-passport/releases) 查看其他版本。1.0.4 是固件修复预发布版：针对部分手机蓝牙链路吞吐不足、长语音提示“语音传输繁忙”的情况，调整了设备申请的蓝牙连接参数，并包含 1.0.3 的首次账号绑定修复。Android 伴侣 App 没有变化，仍是 1.0.2。**遇到长语音传输繁忙或首次账号绑定失败时，建议升级固件；日常使用正常的设备可以继续使用现有版本。** iOS 伴侣 App 不在 Release 里，通过 TestFlight 安装，见“在 iPhone 上使用”。源码不存安装包，封面仅用于玩法社区。
 
 | 文件 | 用途 |
 |---|---|
 | `Muse-Passport-1.0.2.apk` | 已签名、不可调试的 Android 伴侣 App 1.0.2，与 1.0.2 Release 里的文件相同 |
-| `Muse-Passport-1.0.3.zip` | 上述 APK、1.0.3 四段固件、刷机参数、本说明、许可证和校验和 |
-| `Muse-Passport-1.0.3-full.bin` | 1.0.3 固件的完整初始化镜像；社区刷机使用，**覆盖已有配置/配对，需要重新设置** |
+| `Muse-Passport-1.0.4.zip` | 上述 APK、1.0.4 四段固件、刷机参数、本说明、许可证和校验和 |
+| `Muse-Passport-1.0.4-full.bin` | 1.0.4 固件的完整初始化镜像；社区刷机使用，**覆盖已有配置/配对，需要重新设置** |
 | `SHA256SUMS` | Release 附件校验和；ZIP 内另有逐文件校验和 |
 
 发行 APK 证书 SHA-256：`0d304c4229c97b19fbaffe5423e294eb0a04ae38c029a453acfd41d4cadaf11c`。
@@ -81,12 +81,12 @@ python -m esptool --chip esp32c3 -p PORT -b 460800 read-flash 0 0x800000 passpor
 芯片检查会重启设备，不能代替板型确认。首次安装可用完整镜像：
 
 ```sh
-python -m esptool --chip esp32c3 -p PORT -b 460800 write-flash 0 Muse-Passport-1.0.3-full.bin
+python -m esptool --chip esp32c3 -p PORT -b 460800 write-flash 0 Muse-Passport-1.0.4-full.bin
 ```
 
-FoloToy AI Passport 也可以不用命令行，直接在 [AI Passport 玩法社区](https://ai-passport.folotoy.cn/plays/919) 的 Muse Passport 页面按提示写入固件。社区提供的是同一份完整镜像，同样会覆盖已有配置与配对。
+FoloToy AI Passport 也可以不用命令行，直接在 [AI Passport 玩法社区](https://ai-passport.folotoy.cn/plays/919) 的 Muse Passport 页面按提示写入固件。社区页面的固件版本以页面标注为准；完整镜像会覆盖已有配置与配对。
 
-**已有 Muse 固件且确需更新固件时，用四段方式升级，保留 NVS 中的 token 和配对。** 解压 ZIP，进入 `muse-passport-1.0.3/firmware/`，执行：
+**已有 Muse 固件且确需更新固件时，用四段方式升级，保留 NVS 中的 token 和配对。** 解压 ZIP，进入 `muse-passport-1.0.4/firmware/`，执行：
 
 ```sh
 python -m esptool --chip esp32c3 -p PORT -b 460800 \
@@ -118,7 +118,7 @@ iOS 伴侣 App 通过 TestFlight 分发，需要 iOS 26 或更新；固件与 An
 
 也可以用 Mac 自行构建伴侣 App：需要 Xcode 26 或更新和一个 Apple ID。用 Xcode 打开 `ios/MusePassport/MusePassport.xcodeproj`，在 MusePassport target 的 Signing & Capabilities 里把 Team 换成自己的，把 Bundle Identifier 改成自己的唯一标识，然后选择自己的 iPhone 运行。免费 Apple ID 也可以，签名 7 天后过期，届时用 Xcode 重新运行一次。
 
-已在 iPhone 14 Pro / iOS 27 实测前台对话、锁屏空闲 10 分钟后对话、设备断电重开后自动恢复、Wi-Fi 与蜂窝网络切换，以及伴侣 App 被系统回收或手动划掉后的对话，这些是在 1.0.1 固件上测的。1.0.3 固件上实测了全新设备完整初始化（官方 Muse App 10.0）、长回复和普通对话；在 iOS 伴侣 App 里保存 token 仍需进一步实测。
+已在 iPhone 14 Pro / iOS 27 实测前台对话、锁屏空闲 10 分钟后对话、设备断电重开后自动恢复、Wi-Fi 与蜂窝网络切换，以及伴侣 App 被系统回收或手动划掉后的对话，这些是在 1.0.1 固件上测的。1.0.3 固件上实测了全新设备完整初始化（官方 Muse App 10.0）、长回复和普通对话；1.0.4 候选固件上已实测短语音、15 秒长语音、蓝牙重连后对话。在 iOS 伴侣 App 里保存 token 仍需进一步实测。
 
 ## 日常对话与按键
 

@@ -62,7 +62,7 @@ PYCONFIG
     fi
     action=build
 fi
-task_idf_args=(-B "$task_build" -DIDF_TARGET=esp32c3 -DPROJECT_VER=1.0.3
+task_idf_args=(-B "$task_build" -DIDF_TARGET=esp32c3 -DPROJECT_VER=1.0.4
     -DSDKCONFIG="$task_build/sdkconfig"
     "-DSDKCONFIG_DEFAULTS=$task_defaults")
 if [ "$action" = monitor ]; then

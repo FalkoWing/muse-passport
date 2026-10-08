@@ -324,7 +324,9 @@ int phone_bridge_gap_event(struct ble_gap_event *e) {
                 atomic_store(&subscribed,e->subscribe.cur_notify!=0);
                 if (!e->subscribe.cur_notify) atomic_store(&ready,false);
                 else {
-                    struct ble_gap_upd_params params={.itvl_min=12,.itvl_max=24,.latency=0,.supervision_timeout=400};
+                    // At 30 ms, a phone taking one packet per event cannot keep up with audio.
+                    // Request 15 ms and a supervision timeout within Apple's accessory guidelines.
+                    struct ble_gap_upd_params params={.itvl_min=12,.itvl_max=12,.latency=0,.supervision_timeout=600};
                     ble_gap_update_params(e->subscribe.conn_handle,&params);
                 }
             }
