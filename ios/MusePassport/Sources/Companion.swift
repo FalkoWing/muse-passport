@@ -33,10 +33,12 @@ final class Companion: NSObject {
     }
 
     var status: String { bridgeState?.status ?? linkStatus }
+    let speechPlayer = SpeechPlayer()
 
     private struct Write {
         let packet: Data
         let done: CheckedContinuation<Bool, Never>?
+        var withoutResponse = false
     }
 
     @ObservationIgnored private let session = ASAccessorySession()
@@ -202,7 +204,11 @@ final class Companion: NSObject {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
         let bridge = Bridge(network: network, userAgent: "MusePassport/\(version)", send: { [weak self] type, id, body in
             await self?.write(type, id, body, epoch: epoch) ?? false
-        }, onState: { states.yield($0) })
+        }, onState: { states.yield($0) }, speech: { [weak self] command in
+            await self?.speechPlayer.receive(command, send: { [weak self] body in
+                await self?.write(BridgeMessageType.speechData, 0, body, epoch: epoch) ?? false
+            })
+        })
         self.bridge = bridge
         self.incoming = incoming
         self.states = states
@@ -214,6 +220,7 @@ final class Companion: NSObject {
     }
 
     private func endBridge() {
+        speechPlayer.stop()
         epoch += 1
         if let bridge { Task { await bridge.stop() } }
         bridge = nil
@@ -256,7 +263,8 @@ final class Companion: NSObject {
     private func packets(_ type: UInt8, _ id: UInt16, _ body: Data) -> [Data]? {
         guard let peripheral, rx != nil else { return nil }
         // Query the limit per message: it grows once the link has negotiated.
-        let mtu = peripheral.maximumWriteValueLength(for: .withoutResponse) + 3
+        let mtu = peripheral.maximumWriteValueLength(for: type == BridgeMessageType.speechData ? .withoutResponse : .withResponse) + 3
+        if type == BridgeMessageType.speechData, body.count + BridgeFrames.header > mtu - 3 { return nil }
         return try? BridgeFrames.packets(type: type, id: id, sequence: nextSequence(), body: body, mtu: mtu)
     }
 
@@ -265,7 +273,8 @@ final class Companion: NSObject {
         guard epoch == self.epoch, let packets = packets(type, id, body) else { return false }
         return await withCheckedContinuation { done in
             for (index, packet) in packets.enumerated() {
-                writes.append(Write(packet: packet, done: index == packets.count - 1 ? done : nil))
+                writes.append(Write(packet: packet, done: index == packets.count - 1 ? done : nil,
+                                    withoutResponse: type == BridgeMessageType.speechData))
             }
             pump()
         }
@@ -274,9 +283,20 @@ final class Companion: NSObject {
     private func pump() {
         guard inflight == nil, !writes.isEmpty, central?.state == .poweredOn,
               let peripheral, peripheral.state == .connected, let rx else { return }
-        let next = writes.removeFirst()
-        inflight = next
-        peripheral.writeValue(next.packet, for: rx, type: .withResponse)
+        while !writes.isEmpty {
+            if writes[0].withoutResponse {
+                guard peripheral.canSendWriteWithoutResponse else { return }
+                let next = writes.removeFirst()
+                peripheral.writeValue(next.packet, for: rx, type: .withoutResponse)
+                // Local acceptance only. Device credit and playback status
+                // acknowledge consumption, and bound the in-flight window.
+                next.done?.resume(returning: true)
+            } else {
+                let next = writes.removeFirst(); inflight = next
+                peripheral.writeValue(next.packet, for: rx, type: .withResponse)
+                return
+            }
+        }
     }
 
     private func received(_ packet: Data) {
@@ -335,6 +355,7 @@ extension Companion: @preconcurrency CBCentralManagerDelegate {
 }
 
 extension Companion: @preconcurrency CBPeripheralDelegate {
+    func peripheralIsReady(toSendWriteWithoutResponse peripheral: CBPeripheral) { pump() }
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         guard let service = peripheral.services?.first(where: { $0.uuid == GATT.bridge }) else {
             linkStatus = "Passport 需要刷入蓝牙桥接固件"

@@ -11,7 +11,8 @@ private struct Rig {
     let states = Mailbox<BridgeState>()
     let bridge: Bridge
 
-    init(firstRetry: Duration = .seconds(60), credentials: Duration = .seconds(5)) {
+    init(firstRetry: Duration = .seconds(60), credentials: Duration = .seconds(5),
+         speech: (@Sendable (SpeechCommand) async -> Void)? = nil) {
         var timing = BridgeTiming()
         timing.firstRetry = firstRetry
         timing.credentials = credentials
@@ -21,7 +22,7 @@ private struct Rig {
         bridge = Bridge(network: network, userAgent: "MusePassport/test", timing: timing, send: { type, id, body in
             await device.put(BridgeMessage(type: type, id: id, sequence: 0, body: body))
             return true
-        }, onState: { state in Task { await states.put(state) } })
+        }, onState: { state in Task { await states.put(state) } }, speech: speech)
     }
 
     static var credentials: [String: Any] {
@@ -87,6 +88,27 @@ private func audioBlock(_ sequence: UInt8, end: Bool) -> Data {
 }
 
 @Suite struct BridgeTests {
+    @Test func speechNegotiationAndStatusDispatchAreOptional() async throws {
+        let commands = Mailbox<SpeechCommand>()
+        let rig = Rig(speech: { await commands.put($0) })
+        await rig.send(BridgeMessageType.credentials, json: Rig.credentials.merging(["reply_speech": "opus-16000-60-v1"]) { $1 })
+        let ready = try #require(await rig.device.next())
+        #expect(try object(ready.body)["reply_speech"] as? String == "opus-16000-60-v1")
+        let state = try await rig.waitForState { $0.museConnected }
+        #expect(state.speechSupported)
+        await rig.send(13, json: ["session": 0x12345678, "limit": 8, "note": "missing", "message": "r"])
+        guard case let .request(session, text, limit) = try #require(await commands.next()) else { Issue.record("missing request"); return }
+        #expect(session == 0x12345678 && text.isEmpty && limit == 8)
+        await rig.send(15, 0, speechPacket(session: session, frame: 12, kind: 1))
+        guard case let .status(status) = try #require(await commands.next()) else { Issue.record("missing status"); return }
+        #expect(status.session == session && status.limit == 12 && status.state == 1)
+        await rig.bridge.stop()
+        let legacy = Rig(speech: { await commands.put($0) })
+        _ = try await legacy.connect()
+        await legacy.send(13, json: ["session": 1, "limit": 8, "note": "n", "message": "r"])
+        #expect(await commands.next(within: .milliseconds(50)) == nil)
+        await legacy.bridge.stop()
+    }
     @Test func credentialsMakeTheDeviceReadyAndConnectMuse() async throws {
         let rig = Rig()
         let vm = try await rig.connect()

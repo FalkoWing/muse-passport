@@ -45,6 +45,7 @@
 #include "muse_locale.h"
 #include "muse_ui.h"
 #include "muse_voice.h"
+#include "muse_speech.h"
 #include "muse_wifi.h"
 #if CONFIG_MUSE_WATCHER_CAMERA
 #include "boards/watcher_camera.h"
@@ -239,6 +240,25 @@ static void talk_button(unsigned ev)
 {
     bool talk_down = s_talk_down;
     static bool swallow;
+#if CONFIG_MUSE_PHONE_BRIDGE
+    static bool speech_press;
+    static TickType_t speech_pressed_at;
+    if (speech_press) {
+        if (ev & MUSE_BTN_TALK_RELEASE) { speech_press=false; return; }
+        if (xTaskGetTickCount()-speech_pressed_at >= pdMS_TO_TICKS(350)) {
+            speech_press=false;
+            post(MUSE_PTT_DOWN,false); s_talk_down=true;
+        }
+        return;
+    }
+    if ((ev & MUSE_BTN_TALK_PRESS) && !muse_menu_is_open() && muse_speech_busy()) {
+        muse_speech_stop();
+        if (muse_state_asleep()) set_asleep(false,muse_board->talk_button);
+        speech_pressed_at=xTaskGetTickCount();
+        speech_press=!(ev & MUSE_BTN_TALK_RELEASE);
+        return;
+    }
+#endif
 #if CONFIG_MUSE_WATCHER_CAMERA
     static TickType_t last_release;
     if ((ev & MUSE_BTN_TALK_PRESS) && !muse_state_asleep()

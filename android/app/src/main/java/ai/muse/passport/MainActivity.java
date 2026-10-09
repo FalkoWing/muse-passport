@@ -22,6 +22,7 @@ public final class MainActivity extends Activity {
     private TextView state,deviceName,stateHint,settingsState;
     private Button settings;
     private Button connect,disconnect,choose;
+    private TextView speechState;
     private BluetoothLeScanner scanner;
     private AlertDialog picker;
     private ArrayAdapter<String> devicesAdapter;
@@ -37,6 +38,7 @@ public final class MainActivity extends Activity {
         choose.setEnabled(!BridgeService.running);
         settingsState.setText(BridgeService.sdkSettingsStatus);
         settings.setEnabled(BridgeService.sdkSettingsSupported && !BridgeService.sdkSettingsPending);
+        speechState.setText(SpeechEngine.status);
         String selected=getSharedPreferences("bridge",0).getString("name","");
         deviceName.setText(selected.isEmpty() ? "尚未选择设备" : selected);
         tick.postDelayed(this,500);
@@ -91,6 +93,11 @@ public final class MainActivity extends Activity {
         choose=button("选择设备",false);choose.setOnClickListener(v->prepare(false));add(device,choose,14);
         settingsState=text("",14,MUTED,false);add(device,settingsState,14);
         settings=button("设备设置",false);settings.setOnClickListener(v->deviceSettings());add(device,settings,8);
+        LinearLayout speech=card(box,16);
+        add(speech,text("回复朗读",18,INK,true),0);
+        speechState=text(SpeechEngine.status,14,MUTED,false);add(speech,speechState,10);
+        Button voice=button("声音与云端设置",false);voice.setOnClickListener(v->speechSettings());add(speech,voice,10);
+        add(speech,text("朗读开关和音量在 Passport 菜单中设置。播放中短按 OK 停止，按住 OK 开始新录音。",14,MUTED,false),10);
         LinearLayout guide=card(box,16);
         add(guide,text("开始对话",18,INK,true),0);
         add(guide,text("01  按住 OK 说话，松开发送\n02  短按上下键，阅读转录与回复\n03  长按下键，打开设备设置",15,INK,false),14);
@@ -107,6 +114,34 @@ public final class MainActivity extends Activity {
                         .setMessage("这会移除 Passport 上的 SDK token。后续账号配对或授权续期可能需要重新设置；已有 Muse 账号配对信息会保留。")
                         .setPositiveButton("清除",(dialog,which)->sendSdkSettings("clear",null)).setNegativeButton("取消",null).show())
                 .setNegativeButton("关闭",null).show();
+    }
+    private void speechSettings() {
+        SpeechSettings options=new SpeechSettings(this);
+        LinearLayout form=new LinearLayout(this);form.setOrientation(LinearLayout.VERTICAL);form.setPadding(dp(24),dp(8),dp(24),dp(8));
+        Switch cloud=new Switch(this);cloud.setText("使用火山／豆包");cloud.setChecked(options.cloud);add(form,cloud,0);
+        Switch legacy=new Switch(this);legacy.setText("旧版 App ID / Access Token");legacy.setChecked(options.legacy);add(form,legacy,12);
+        EditText app=new EditText(this);app.setHint("App ID（旧版鉴权）");app.setText(options.appId);add(form,app,8);
+        EditText secret=new EditText(this);secret.setHint(options.hasSecret()?"已保存密钥，留空保持":"API Key 或 Access Token");
+        secret.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        secret.setSaveEnabled(false);secret.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);add(form,secret,8);
+        EditText resource=new EditText(this);resource.setHint("Resource ID");resource.setText(options.resource);add(form,resource,8);
+        EditText voice=new EditText(this);voice.setHint("音色 ID（speaker）");voice.setText(options.voice);add(form,voice,8);
+        for(EditText input:new EditText[]{app,resource,voice}){input.setSingleLine(true);input.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);}
+        add(form,text("密钥仅在本机安全加密保存。使用云端会把回复文字发送给火山；只有未开播的失败才尝试内置语音。内置方案需要中文离线声包。",13,MUTED,false),12);
+        Button clear=button("清除云端密钥",false);clear.setOnClickListener(v->{try{options.clear();secret.getText().clear();secret.setHint("API Key 或 Access Token");Toast.makeText(this,"密钥已清除",Toast.LENGTH_SHORT).show();}catch(Exception e){Toast.makeText(this,"清除失败，请重试",Toast.LENGTH_SHORT).show();}});add(form,clear,8);
+        Button install=button("安装系统语音数据",false);install.setOnClickListener(v->{try{startActivity(new Intent(android.speech.tts.TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA));}catch(ActivityNotFoundException e){Toast.makeText(this,"请在系统文字转语音设置中安装中文声包",Toast.LENGTH_LONG).show();}});add(form,install,8);
+        ScrollView scroll=new ScrollView(this);scroll.addView(form);
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("回复声音").setView(scroll)
+                .setPositiveButton("保存",null).setNeutralButton("保存并试听",null).setNegativeButton("关闭",null).create();
+        dialog.setOnDismissListener(d->secret.getText().clear());dialog.show();dialog.getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
+        Runnable save=()->{
+            options.cloud=cloud.isChecked();options.legacy=legacy.isChecked();options.appId=app.getText().toString();
+            options.resource=resource.getText().toString();options.voice=voice.getText().toString();
+            try{options.save(secret.getText().toString().trim());secret.getText().clear();Toast.makeText(this,"已保存",Toast.LENGTH_SHORT).show();}
+            catch(Exception e){throw new IllegalStateException("无法安全保存密钥");}
+        };
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{try{save.run();dialog.dismiss();}catch(Exception e){Toast.makeText(this,"无法安全保存，请重试",Toast.LENGTH_SHORT).show();}});
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v->{try{save.run();SpeechEngine.get(this).preview();}catch(Exception e){Toast.makeText(this,"无法安全保存，请重试",Toast.LENGTH_SHORT).show();}});
     }
     private void editSdkToken() {
         EditText input=new EditText(this);input.setSingleLine(true);input.setHint("mgst_…");

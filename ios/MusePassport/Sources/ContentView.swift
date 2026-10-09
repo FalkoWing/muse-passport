@@ -5,6 +5,7 @@ struct ContentView: View {
     @State private var editingToken = false
     @State private var confirmingClear = false
     @State private var confirmingRemoval = false
+    @State private var editingSpeech = false
 
     private var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
@@ -50,6 +51,13 @@ struct ContentView: View {
                     .disabled(!state.sdkSettingsSupported || state.sdkSettingsPending)
                 }
 
+                Section("回复朗读") {
+                    Button("声音与云端设置") { editingSpeech = true }
+                    if !companion.speechPlayer.status.isEmpty { Text(companion.speechPlayer.status) }
+                    Text("朗读开关和音量在 Passport 菜单中设置。播放中短按 OK 停止，按住 OK 开始新录音。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+
                 Section {
                     Label("按住 OK 说话，松开发送", systemImage: "1.circle")
                     Label("短按上下键，阅读转录与回复", systemImage: "2.circle")
@@ -62,6 +70,7 @@ struct ContentView: View {
             }
             .navigationTitle("Muse Passport")
             .sheet(isPresented: $editingToken) { TokenEditor { companion.updateSDKToken($0) } }
+            .sheet(isPresented: $editingSpeech) { SpeechEditor(player: companion.speechPlayer) }
             .confirmationDialog("清除 SDK token？", isPresented: $confirmingClear, titleVisibility: .visible) {
                 Button("清除", role: .destructive) { companion.updateSDKToken(nil) }
             } message: {
@@ -73,6 +82,48 @@ struct ContentView: View {
                 Text("系统会同时删除蓝牙配对。设备上的账号绑定和 SDK token 不受影响。")
             }
         }
+    }
+}
+
+private struct SpeechEditor: View {
+    @Bindable private var settings = SpeechSettings.shared
+    @Bindable var player: SpeechPlayer
+    @State private var secret = ""
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Toggle("使用火山／豆包", isOn: $settings.cloud)
+                    if settings.cloud {
+                        Toggle("旧版 App ID / Access Token", isOn: $settings.legacy)
+                        if settings.legacy { TextField("App ID", text: $settings.appID) }
+                        SecureField(settings.hasSecret ? "已保存密钥，留空保持" : settings.legacy ? "Access Token" : "API Key", text: $secret)
+                        TextField("Resource ID", text: $settings.resource)
+                        TextField("音色 ID（speaker）", text: $settings.voice)
+                        Button("清除已保存密钥", role: .destructive) { settings.clearSecret() }
+                    }
+                } footer: {
+                    Text(settings.cloud ? "使用火山语音控制台中的密钥与匹配音色。密钥仅保存在本机钥匙串，回复文字会发送给火山合成。未开播失败时尝试内置语音，开播后失败只停止。" : "使用 iPhone 内置中文语音，不需云端账号。")
+                }
+                .textInputAutocapitalization(.never).autocorrectionDisabled()
+                Section {
+                    Button(player.previewing ? "正在试听…" : "保存并在手机试听") {
+                        if settings.save(secret: secret) { secret = ""; player.preview() }
+                    }.disabled(player.previewing)
+                    if !player.status.isEmpty { Text(player.status) }
+                    if !settings.status.isEmpty { Text(settings.status) }
+                }
+            }
+            .navigationTitle("回复声音").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存") { if settings.save(secret: secret) { secret = ""; dismiss() } }
+                }
+            }
+        }
+        .onDisappear { secret = "" }
     }
 }
 

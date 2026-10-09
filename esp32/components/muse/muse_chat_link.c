@@ -51,6 +51,7 @@
 #include "muse_locale.h"
 #include "muse_passport_reader.h"
 #include "muse_wifi.h"
+#include "muse_speech.h"
 
 static const char *TAG = "muse_chat_link";
 
@@ -120,7 +121,7 @@ static struct {
     uint64_t after;                     /* history seq read up to */
     char note_id[80];
     int64_t t_end, t_poll, t_reply, t_show;
-    bool heard, replied, skipped_big;
+    bool heard, replied, skipped_big, speech_active;
     bool after_note;                    /* the walk is past the note's row, before any other user row */
     char error[EV_TEXT];                /* why the turn failed, repeated at the release */
     char text[TEXT_MAX];
@@ -504,6 +505,7 @@ static void end_turn(void)
 
 static void fail(const char *why)
 {
+    muse_speech_stop();
     ESP_LOGW(TAG, "turn failed: %s", why);
     end_turn();
     strlcpy(s_turn.error, why, sizeof(s_turn.error));
@@ -597,6 +599,7 @@ static bool on_row(const row_t *r)
     if (!r->ready) {
         return false;   /* still being written; read it again */
     }
+    if (r->text[0] && !muse_speech_request(s_turn.note_id,r->msg)) return false;
     if (r->text[0]) {
         size_t len = strlen(s_turn.text);
         snprintf(s_turn.text + len, sizeof(s_turn.text) - len, "%s%s", len ? " " : "", r->text);
@@ -663,6 +666,9 @@ static bool scroll(int64_t now)
 static void pump(void)
 {
     int64_t now = esp_timer_get_time();
+    bool busy=muse_speech_busy();
+    if (s_turn.speech_active && !busy) s_turn.t_reply=now;
+    s_turn.speech_active=busy;
     if (s_turn.phase == T_ACK && received(RX_NOTE)) {
         on_ack();
     }
@@ -675,7 +681,7 @@ static void pump(void)
         }
         return;
     }
-    if (!s_stream[RX_ROW] && now >= s_turn.t_poll && !poll_row()) {
+    if (!s_stream[RX_ROW] && !muse_speech_busy() && now >= s_turn.t_poll && !poll_row()) {
         fail(MUSE_UI_TEXT("LOST CONNECTION TO MUSE", "Muse 连接已断开"));
         return;
     }
@@ -686,7 +692,7 @@ static void pump(void)
 #else
             scroll(now)
 #endif
-            && now - s_turn.t_reply > SETTLE_US) {
+            && now - s_turn.t_reply > SETTLE_US && !muse_speech_busy()) {
             ESP_LOGI(TAG, "reply done: %u chars", (unsigned)strlen(s_turn.text));
             end_turn();
             emit(MUSE_HATCH_EV_DONE, NULL);
@@ -706,6 +712,7 @@ void muse_hatch_start(void)
     s_rx[RX_NOTE].body = ack;
     s_rx[RX_NOTE].cap = sizeof(ack);
     muse_passport_reader_start();
+    muse_speech_init();
 }
 
 void muse_hatch_status(muse_hatch_status_t *out)
@@ -767,6 +774,7 @@ bool muse_hatch_ready(void)
 
 void muse_hatch_turn_begin(void)
 {
+    muse_speech_reset();
     muse_passport_reader_reset();
     end_turn();
     xQueueReset(s_events);
@@ -852,6 +860,7 @@ void muse_hatch_turn_end(void)
 
 void muse_hatch_turn_cancel(void)
 {
+    muse_speech_stop();
     end_turn();
     xQueueReset(s_events);
 }

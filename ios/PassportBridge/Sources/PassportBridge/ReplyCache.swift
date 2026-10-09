@@ -137,6 +137,13 @@ public struct ReplyCache: Sendable {
         return related
     }
 
+    public func speechText(note: String, message: String) -> String? {
+        guard note == noteID, !note.isEmpty, related.contains(message),
+              let row = rows.first(where: { $0.messageID == message }),
+              row.event == "message.assistant", row.ready else { return nil }
+        return row.readerText
+    }
+
     /// The local `/chat/history` endpoint: at most one event after `after_seq`.
     public func page(_ path: String) throws -> Data {
         let query = Self.query(path)

@@ -7,7 +7,8 @@ import java.util.List;
 /** Version 1: type, flags, request ID, message sequence, byte offset (all u16 LE). */
 public final class BridgeProtocol {
     public static final int HELLO=1, CREDENTIALS=2, READY=3, OPEN=4, DATA=5, CANCEL=6,
-            RESPONSE=7, ACK=8, TOKENS=9, ERROR=10, TEXT=11, SDK_SETTINGS=12;
+            RESPONSE=7, ACK=8, TOKENS=9, ERROR=10, TEXT=11, SDK_SETTINGS=12,
+            SPEECH_REQUEST=13, SPEECH_DATA=14, SPEECH_STATUS=15;
     public static final int MAX_MESSAGE=8192, HEADER=8;
     public record Message(int type, int id, int sequence, byte[] body) {}
     private ByteArrayOutputStream buffer;

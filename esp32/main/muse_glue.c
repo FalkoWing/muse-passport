@@ -409,6 +409,8 @@ static const muse_link_ops_t s_ops = {
     .req_open = phone_bridge_open,
     .req_send = phone_bridge_send,
     .req_cancel = phone_bridge_cancel,
+    .speech_ready = phone_bridge_speech_ready,
+    .speech_send = phone_bridge_speech_send,
 #else
     .req_ready = noise_ctrl_is_connected,
     .req_open = noise_ctrl_req_open,

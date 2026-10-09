@@ -13,6 +13,9 @@ of the upstream Python modules in linux/src/musegadget/noise and keep the
 upstream copyright notice. The root README and public
 Passport documentation have been adapted for community distribution.
 
+Reply speech uses Xiph libopus 1.6.1 under its BSD-3-Clause license.
+See shared/opus/Sources/PassportOpus/COPYING for the original copyright notices.
+
 FoloToy BSP and related test stubs retain their MIT notices. Generated Source
 Han Sans font resources retain SIL Open Font License 1.1. Other third-party
 files and dependencies retain their own licenses and copyright notices.

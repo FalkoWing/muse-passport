@@ -16,6 +16,7 @@
  */
 
 #include "muse_voice.h"
+#include "muse_speech.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -351,7 +352,9 @@ static bool hatch_reply(bool *delivered)
     muse_state_set_mode(MUSE_MODE_THINKING);
     muse_state_set_caption(MUSE_UI_TEXT("SENDING VOICE NOTE", "正在发送语音"));   /* until there's a transcript or reply */
     static int16_t buf[MUSE_AUDIO_CHUNK];
+#if !CONFIG_MUSE_PHONE_BRIDGE
     static const int16_t silence[MUSE_AUDIO_CHUNK];
+#endif
     char text[96];
     static char page[MUSE_CAPTION_MAX];
     bool done = false, speaking = false, replied = false;
@@ -397,6 +400,12 @@ static bool hatch_reply(bool *delivered)
             return true;
         }
         size_t n = muse_hatch_turn_read(buf, MUSE_AUDIO_CHUNK, speaking || done ? 0 : 20);
+#if CONFIG_MUSE_PHONE_BRIDGE
+        if (muse_speech_started()) {
+            speaking = true;
+            muse_state_set_mode(MUSE_MODE_SPEAKING);
+        }
+#endif
         if (n) {
             if (!speaking) {
                 speaking = true;
@@ -408,11 +417,17 @@ static bool hatch_reply(bool *delivered)
             played += n;
         } else if (done) {
             break;
-        } else if (speaking) {
+        }
+#if !CONFIG_MUSE_PHONE_BRIDGE
+        else if (speaking) {
             /* Between messages: keep the speaker fed so it doesn't replay stale DMA. */
             muse_state_set_level(0);
             muse_audio_write(silence, MUSE_AUDIO_CHUNK);
         }
+#endif
+#if CONFIG_MUSE_PHONE_BRIDGE
+        if (speaking && !n) vTaskDelay(pdMS_TO_TICKS(10));
+#endif
         /* The page being said, or before the speech the reply's opening page. */
         if ((speaking || replied) && muse_hatch_turn_caption(played, page, sizeof(page))) {
             muse_state_set_caption("%s", page);

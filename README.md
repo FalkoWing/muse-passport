@@ -22,6 +22,8 @@ limitations under the License.
 
 把随身设备变成 Muse 对话终端：按住 OK 说话，松开后阅读自己的语音转录与 Muse 文字回复；长内容可以上下翻页，也能回看本轮转录。设备通过蓝牙借用手机网络，目前已在 **FoloToy AI Passport** 实机验证。
 
+源码已加入回复朗读候选实现，尚待两端手机与 Passport 真机验收。已发布的 1.0.4 安装包仍以文字回复为准；下述朗读功能需要重新构建配套固件与伴侣 App。
+
 这是基于 [Muse 官方 Gadgets 开源硬件方案](https://gadgets.muse.ai/) 与 [Muse Gadget SDK](https://github.com/facebookincubator/muse-gadget-sdk) 的社区衍生项目，包含设备固件、Android 伴侣 App 与 iOS 伴侣 App。与 Meta、Muse 或 FoloToy 官方没有隶属或背书关系。
 
 ## 为什么需要伴侣 App
@@ -49,7 +51,7 @@ flowchart LR
 | 麦克风 | 必需；能提供 16 kHz、16 bit、单声道 PCM。可适配 I2S 数字麦克风或音频 codec；Passport 使用 ES8311 音频接口，不能只更换 GPIO 而忽略采样格式与增益 |
 | 屏幕 | 阅读功能必需；实测 ST7789P3 240×320 竖屏。其他尺寸/控制器需适配驱动、布局、字体与分页 |
 | 按键 | 说话键与上下导航；实测三键 ADC 输入。替代 GPIO 按键需适配按下、松开及长按事件 |
-| 可选硬件 | 电池与电量计适合随身使用；扬声器不是当前文字回复功能的必要条件，尚未实现 Muse 回复语音播放 |
+| 可选硬件 | 电池与电量计适合随身使用；源码候选通过内置 ES8311 与扬声器播放回复，尚待真机验收 |
 | 手机 | Android 8.0+，arm64；实测 Pixel 10 Pro XL / Android 17。iOS 26+；实测 iPhone 14 Pro / iOS 27 |
 | Muse | 自己的账号、官方 Muse App、[Gadget SDK token](https://gadgets.muse.ai/settings/sdk-tokens)（建议设置），且伴侣 App 能访问 Muse 服务 |
 | 刷机 | USB 数据线与电脑；发布固件只适用于 FoloToy AI Passport |
@@ -137,6 +139,16 @@ iOS 伴侣 App 通过 TestFlight 分发，需要 iOS 26 或更新；固件与 An
 
 ## 常见问题与当前边界
 
+### 回复朗读（源码候选）
+
+首次启用新固件时默认开启朗读，之后记住设备菜单中的“回复朗读”开关与音量。每条 Muse 回复文字完成后，手机按句合成并发送给 Passport 播放；文字分页仍可使用。播放中短按 OK 停止，按住约 0.35 秒后开始新录音，上一轮迟到音频会被丢弃。旧伴侣 App 或旧固件继续使用文字对话。
+
+两端伴侣 App 的“声音与云端设置”默认使用手机内置中文语音，可选择火山／豆包 V3 TTS，填写匹配的 Resource ID 与音色 ID（speaker），使用 API Key 或旧版 App ID / Access Token 鉴权。保存后可在手机上试听。Android 需要可用的中文离线声包，可从该页面进入安装；iPhone 使用系统中文语音。
+
+云端配置会记住，密钥仅保存在手机：iOS 钥匙串，Android Keystore 密钥加密的 App 私有存储。使用云端会把本条回复文字发送给火山。云端在设备尚未出声时失败才回退内置语音；已出声后失败只停止该条朗读，不换声重读。内置语音也失败时继续阅读文字。
+
+下行采用 16 kHz 单声道 Opus，固定 16 kbps、60 ms / 120 字节帧，设备保留 8 帧缓冲，通过播放反馈限制发送窗口。它不依赖手机批准 15 ms 连接间隔；30 ms 每事件一包的预算已做主机模拟，真实 BLE 吞吐、C3 解码耗时、音质与两端锁屏播放仍待验收。iOS 在系统提供的后台时间耗尽时会停止朗读并保留文字；尚未证明任意长度回复都能锁屏连续播放。
+
 - **蓝牙已连接，Muse 未连接**：Android 先把伴侣 App 升级到 1.0.2，再查看伴侣 App 显示的具体失败环节。DNS、超时、TLS 或网络连接错误需检查伴侣 App 的网络与 VPN 设置，Android 上还包括 VPN 的分应用规则；API HTTP 状态、账号无可用 VM、设备注册或回复订阅错误需按提示检查账号、配对或 Muse 服务。官方 Muse App 能访问服务，不代表所有连接错误都来自手机网络。无需添加代理端口；可在伴侣 App 断开后重新连接。
 - **能看转录但没回复**：确认 Android 伴侣 App 为 1.0.2、固件为 1.0.1 或 1.0.3，并等待官方 Muse App 的回复；重新连接后再发新一轮。本轮阅读缓存不是长期聊天历史，伴侣 App 进程结束或会话重建可能丢失。
 - **繁体或方块**：Muse 服务端决定识别文字与语言。扩展字库解决标准 Big5 显示，不强制服务端输出简体，也不提高识别准确率；生僻字、HKSCS 和 emoji 仍可能缺字。
@@ -145,11 +157,11 @@ iOS 伴侣 App 通过 TestFlight 分发，需要 iOS 26 或更新；固件与 An
 - **刷入完整镜像后伴侣 App 连不上**：完整镜像会清掉设备里的蓝牙配对，手机系统里的旧配对还在，两边对不上。Android 到系统蓝牙设置里对 `MuseGadget-XXXXXX` 取消配对，再回伴侣 App 重新连接并输入六位数字；iPhone 在伴侣 App 里“移除设备”后重新添加。
 - **清除与转交设备**：伴侣 App 可单独清除 SDK token；设备账号/Wi-Fi 重置不自动清除它。转交前分别清除 token 和账号配对。保存中断时重连检查状态，不把断线当作保存成功。
 
-当前不提供回复语音播放或设备 OTA。熄屏只关闭背光，不代表完整低功耗休眠。已验证正常语速语音、简繁中文显示、本轮转录、回复及分页，以及全新设备完整初始化；伴侣 App 写入真实 token 后重启重连、长期锁屏、跨手机与网络切换、续航仍需进一步实测，因此仍标记为预发布。
+已发布的 1.0.4 不提供回复语音播放；源码朗读候选尚待验收，设备 OTA 仍未提供。熄屏只关闭背光，不代表完整低功耗休眠。已验证正常语速语音、简繁中文显示、本轮转录、回复及分页，以及全新设备完整初始化；伴侣 App 写入真实 token 后重启重连、长期锁屏、跨手机与网络切换、续航仍需进一步实测，因此仍标记为预发布。
 
 ## 开发与构建
 
-固件固定 **ESP-IDF 6.0.1**；Android 使用 **JDK 17**、Android SDK 36 / Build Tools 35.0.0、Python 3.13，Gradle 8.13、AGP 8.13.2、Chaquopy 17.0.0；iOS 使用 **Xcode 26** 或更新，只依赖系统框架。构建脚本默认 macOS Homebrew 路径；其他安装设置 `JAVA_HOME`、`ANDROID_HOME`、`PASSPORT_BUILD_PYTHON`；Windows 可直接用 `gradlew.bat`。IDF 自定义路径设置 `IDF_EXPORT` 或先激活该版本。
+固件固定 **ESP-IDF 6.0.1**；Android 使用 **JDK 17**、Android SDK 36 / Build Tools 35.0.0、NDK 27.2.12479018 / CMake 3.22.1、Python 3.13，Gradle 8.13、AGP 8.13.2、Chaquopy 17.0.0；iOS 使用 **Xcode 26** 或更新。三端共享仓库内固定版本的 libopus 1.6.1 源码，手机编码、设备解码。构建脚本默认 macOS Homebrew 路径；其他安装设置 `JAVA_HOME`、`ANDROID_HOME`、`PASSPORT_BUILD_PYTHON`；Windows 可直接用 `gradlew.bat`。IDF 自定义路径设置 `IDF_EXPORT` 或先激活该版本。
 
 ```sh
 git clone --branch passport https://github.com/FalkoWing/muse-passport.git
@@ -172,6 +184,8 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 PYTHONPATH=../linux/src:app/src/main/python python3 -m unittest discover -s tests -v
 javac -d /tmp/passport-protocol app/src/main/java/ai/muse/passport/BridgeProtocol.java tests/ProtocolTest.java
 java -cp /tmp/passport-protocol ProtocolTest
+javac -d /tmp/passport-protocol app/src/main/java/ai/muse/passport/BridgeProtocol.java app/src/main/java/ai/muse/passport/SpeechWire.java tests/SpeechTest.java
+java -cp /tmp/passport-protocol SpeechTest
 # iOS 桥接核心测试，在 ios/PassportBridge/ 下执行，不需要模拟器
 swift test
 ```

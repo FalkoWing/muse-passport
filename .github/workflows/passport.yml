@@ -49,7 +49,7 @@ jobs:
         with:
           python-version: '3.13'
       - name: Install Android SDK packages
-        run: '"${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;35.0.0"'
+        run: '"${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"'
       - name: Build and lint debug APK
         working-directory: android
         shell: bash
@@ -58,6 +58,8 @@ jobs:
           ./tools/build.sh assembleDebug lintDebug
           javac -d /tmp/passport-protocol app/src/main/java/ai/muse/passport/BridgeProtocol.java tests/ProtocolTest.java
           java -cp /tmp/passport-protocol ProtocolTest
+          javac -d /tmp/passport-protocol app/src/main/java/ai/muse/passport/BridgeProtocol.java app/src/main/java/ai/muse/passport/SpeechWire.java tests/SpeechTest.java
+          java -cp /tmp/passport-protocol SpeechTest
       - name: Check the iOS test vectors match the reference implementations
         shell: bash
         run: |

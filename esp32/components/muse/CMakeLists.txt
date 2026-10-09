@@ -48,7 +48,7 @@ if(CONFIG_MUSE_ENABLED)
         list(APPEND srcs "muse_ui.c")
     endif()
     if(CONFIG_MUSE_PHONE_BRIDGE)
-        list(APPEND srcs "muse_passport_reader.c")
+        list(APPEND srcs "muse_passport_reader.c" "muse_speech.c" "muse_speech_buffer.c")
     endif()
     if(CONFIG_MUSE_HATCH)
         list(APPEND srcs "muse_chat.c" "muse_account_api.c" "muse_chat_session.cpp")
@@ -99,7 +99,7 @@ set(muse_priv_requires
     noise_core minimp3
     esp_lcd esp_adc esp_driver_i2s esp_driver_ledc esp_driver_spi esp_driver_uart esp_wifi
     esp_driver_pcnt)
-list(APPEND muse_priv_requires camera passport_bsp)
+list(APPEND muse_priv_requires camera passport_bsp passport_opus)
 
 idf_component_register(
     SRCS ${srcs}

@@ -6,6 +6,7 @@ if (signingFile.exists()) signingFile.withInputStream { releaseSigning.load(it) 
 android {
     namespace 'ai.muse.passport'
     compileSdk 36
+    ndkVersion '27.2.12479018'
     defaultConfig {
         applicationId 'ai.muse.passport'
         minSdk 26
@@ -13,6 +14,7 @@ android {
         versionCode 8
         versionName '1.0.2'
         ndk { abiFilters 'arm64-v8a' }
+        externalNativeBuild { cmake { arguments '-DCMAKE_BUILD_TYPE=Release', '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON' } }
     }
     signingConfigs {
         release {
@@ -32,6 +34,7 @@ android {
         }
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    externalNativeBuild { cmake { path file('src/main/cpp/CMakeLists.txt'); version '3.22.1' } }
 }
 chaquopy {
     defaultConfig {

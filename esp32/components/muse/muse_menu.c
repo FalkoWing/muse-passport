@@ -81,8 +81,13 @@ typedef enum {
 } item_t;
 
 static const char *const ITEM_NAMES[ITEM_COUNT] = {
+#if CONFIG_MUSE_PHONE_BRIDGE
+    [ITEM_VOLUME] = MUSE_UI_TEXT("Volume", "音量"),
+    [ITEM_SPEAKER] = MUSE_UI_TEXT("Speaker", "回复朗读"),
+#else
     [ITEM_VOLUME] = MUSE_UI_TEXT("Volume", "提示音量"),
     [ITEM_SPEAKER] = MUSE_UI_TEXT("Speaker", "扬声器"),
+#endif
     [ITEM_BRIGHTNESS] = MUSE_UI_TEXT("Brightness", "屏幕亮度"),
     [ITEM_MIC] = MUSE_UI_TEXT("Mic gain", "麦克风增益"),
     [ITEM_SLEEP] = MUSE_UI_TEXT("Auto-sleep", "自动熄屏"),
@@ -560,8 +565,8 @@ void muse_menu_build(lv_obj_t *parent, int w, int h)
         s_item_row[i] = -1;
 #if CONFIG_MUSE_PHONE_BRIDGE
         /* The bridge uses phone networking. Do not offer controls for an
-         * unused Wi-Fi path, unavailable reply TTS or unsupported power-off. */
-        if (i == ITEM_WIFI || i == ITEM_PHONE || i == ITEM_SPEAKER || i == ITEM_POWER) continue;
+         * unused Wi-Fi path or unsupported power-off. */
+        if (i == ITEM_WIFI || i == ITEM_PHONE || i == ITEM_POWER) continue;
 #endif
         s_item_row[i] = row++;
         lv_obj_t *r = lv_obj_create(s_list);

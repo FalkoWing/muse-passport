@@ -92,6 +92,20 @@ class ReplyCache:
                 row = self.rows.get(identifier, {})
                 self.diagnostic(event, len(row.get("display_text", "")), bool(parent in self.note_ids), len(self.note_ids))
 
+    def speech_text(self, note, message):
+        if not note or note != self.note_id:
+            return None
+        related = set(self.note_ids)
+        for _ in self.rows:
+            for row in self.rows.values():
+                if row["event_name"] == "message.assistant" and (
+                        not row["reply_to_message_id"] or row["reply_to_message_id"] in related):
+                    related.add(row["message_id"])
+        row = self.rows.get(message)
+        if message not in related or not row or row["event_name"] != "message.assistant" or not row["display_text_ready"]:
+            return None
+        return row.get("reader_text", row["display_text"])
+
     def page(self, path):
         query = parse_qs(urlsplit(path).query)
         if "after_seq" not in query:

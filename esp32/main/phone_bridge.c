@@ -19,6 +19,7 @@
 #include "esp_system.h"
 #include "muse_settings.h"
 #include "muse_state.h"
+#include "muse_speech.h"
 #include "esp_app_desc.h"
 #include "esp_timer.h"
 #include "esp_log.h"
@@ -28,12 +29,15 @@
 #define SLOTS 4
 #define UUID(x) BLE_UUID128_INIT(0x00,0x79,0x6c,0x6c,0x6f,0x6a,0x00,0x80,0x00,0x40,x,0x00,0x65,0x73,0x75,0x4d)
 enum { HELLO=1, CREDENTIALS, READY, OPEN, DATA, CANCEL, RESPONSE, ACK, TOKENS, ERROR,
-       SDK_SETTINGS=12 };
+       SDK_SETTINGS=12, SPEECH_REQUEST=13, SPEECH_DATA=14, SPEECH_STATUS=15 };
 static const ble_uuid128_t service_uuid=UUID(0x10), rx_uuid=UUID(0x11), tx_uuid=UUID(0x12);
 static const char *TAG="phone_bridge";
 static uint16_t tx_handle;
 static atomic_int conn=BLE_HS_CONN_HANDLE_NONE;
 static atomic_bool ready, subscribed;
+static atomic_bool speech_capable;
+typedef struct { uint32_t gen; uint16_t len; uint8_t type, data[256]; } speech_message_t;
+static QueueHandle_t speech_messages;
 static atomic_uint generation, waiting_ack;
 static uint16_t sequence=1;
 static uint32_t next_id=1;
@@ -125,6 +129,7 @@ static void credentials(void) {
     cJSON_AddStringToObject(root,"version",esp_app_get_description()->version);
     cJSON_AddStringToObject(root,"sdk_token",identity_sdk_token()?identity_sdk_token():"");
     cJSON_AddBoolToObject(root,"sdk_settings",true);
+    cJSON_AddStringToObject(root,"reply_speech","opus-16000-60-v1");
     cJSON_AddBoolToObject(root,"sdk_token_configured",identity_sdk_token()!=NULL);
     char vm[MUSE_VM_MAX+1]; muse_settings_hatch_vm(vm);
     cJSON_AddStringToObject(root,"vm_id",vm);
@@ -189,11 +194,18 @@ static void worker(void *arg) {
     (void)arg;
     message_t m;
     for (;;) {
-        if (xQueueReceive(messages,&m,pdMS_TO_TICKS(250))==pdTRUE) {
+        if (xQueueReceive(messages,&m,pdMS_TO_TICKS(muse_speech_busy()?10:250))==pdTRUE) {
             if (m.gen==atomic_load(&generation) && secure(atomic_load(&conn))) {
                 switch (m.type) {
                     case HELLO: credentials(); break;
                     case READY:
+                        {
+                            cJSON *r=cJSON_ParseWithLength((const char *)m.data,m.len);
+                            const char *s=cJSON_GetStringValue(cJSON_GetObjectItem(r,"reply_speech"));
+                            atomic_store(&speech_capable,s && !strcmp(s,"opus-16000-60-v1")
+                                && ble_att_mtu(atomic_load(&conn))>=140);
+                            cJSON_Delete(r);
+                        }
                         atomic_store(&ready,true); muse_state_poke();
                         ESP_LOGI(TAG,"Muse ready through Android BLE"); break;
                     case RESPONSE: dispatch_response(&m); break;
@@ -208,6 +220,10 @@ static void worker(void *arg) {
         }
         // GAP never calls user callbacks; request cleanup belongs on this task.
         if (!atomic_load(&ready)) fail_requests();
+        speech_message_t speech;
+        if (xQueueReceive(speech_messages,&speech,0)==pdTRUE && speech.gen==atomic_load(&generation)) {
+            if (!notify_message(speech.type,0,speech.data,speech.len,3000)) muse_speech_stop();
+        }
     }
 }
 static int access(uint16_t handle,uint16_t attr,struct ble_gatt_access_ctxt *ctxt,void *arg) {
@@ -220,6 +236,12 @@ static int access(uint16_t handle,uint16_t attr,struct ble_gatt_access_ctxt *ctx
     if (type==ACK) {
         if (flags!=3 || off || n!=HEADER) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
         if (id==atomic_load(&waiting_ack)) xSemaphoreGive(ack_sem);
+        return 0;
+    }
+    if (type==SPEECH_DATA) {
+        if (!speech_capable || flags!=3 || off || n<HEADER+9 || n>HEADER+129)
+            return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+        muse_speech_receive(b+HEADER,n-HEADER);
         return 0;
     }
     if (type!=HELLO && type!=READY && type!=RESPONSE && type!=TOKENS && type!=ERROR && type!=SDK_SETTINGS) return BLE_ATT_ERR_REQ_NOT_SUPPORTED;
@@ -246,7 +268,7 @@ static int access(uint16_t handle,uint16_t attr,struct ble_gatt_access_ctxt *ctx
 }
 static const struct ble_gatt_svc_def services[]={
     {.type=BLE_GATT_SVC_TYPE_PRIMARY,.uuid=&service_uuid.u,.characteristics=(struct ble_gatt_chr_def[]){
-        {.uuid=&rx_uuid.u,.access_cb=access,.flags=BLE_GATT_CHR_F_WRITE|BLE_GATT_CHR_F_WRITE_ENC|BLE_GATT_CHR_F_WRITE_AUTHEN},
+        {.uuid=&rx_uuid.u,.access_cb=access,.flags=BLE_GATT_CHR_F_WRITE|BLE_GATT_CHR_F_WRITE_NO_RSP|BLE_GATT_CHR_F_WRITE_ENC|BLE_GATT_CHR_F_WRITE_AUTHEN},
         {.uuid=&tx_uuid.u,.access_cb=access,.val_handle=&tx_handle,.flags=BLE_GATT_CHR_F_NOTIFY},
         {0}}}, {0}};
 const struct ble_gatt_svc_def *phone_bridge_services(void) { return services; }
@@ -305,8 +327,9 @@ static void audio_worker(void *arg) {
 void phone_bridge_init(void) {
     tx_lock=xSemaphoreCreateMutex(); ack_sem=xSemaphoreCreateBinary(); slots_lock=xSemaphoreCreateMutex();
     messages=xQueueCreate(4,sizeof(message_t));
+    speech_messages=xQueueCreate(8,sizeof(speech_message_t));
     audio_messages=xQueueCreate(48,sizeof(audio_message_t));
-    if (!tx_lock || !ack_sem || !slots_lock || !messages || !audio_messages || xTaskCreate(audio_worker,"phone_audio",4096,NULL,4,NULL)!=pdPASS || xTaskCreate(worker,"phone_bridge",4096,NULL,4,NULL)!=pdPASS) abort();
+    if (!tx_lock || !ack_sem || !slots_lock || !messages || !speech_messages || !audio_messages || xTaskCreate(audio_worker,"phone_audio",4096,NULL,4,NULL)!=pdPASS || xTaskCreate(worker,"phone_bridge",4096,NULL,4,NULL)!=pdPASS) abort();
 }
 int phone_bridge_gap_event(struct ble_gap_event *e) {
     switch (e->type) {
@@ -314,6 +337,7 @@ int phone_bridge_gap_event(struct ble_gap_event *e) {
             if (!e->connect.status) { atomic_store(&conn,e->connect.conn_handle); atomic_fetch_add(&generation,1); }
             break;
         case BLE_GAP_EVENT_DISCONNECT:
+            atomic_store(&speech_capable,false); muse_speech_stop();
             atomic_store(&conn,BLE_HS_CONN_HANDLE_NONE); atomic_store(&ready,false); atomic_store(&subscribed,false);
             atomic_fetch_add(&generation,1); clear_incoming(); xSemaphoreGive(ack_sem); muse_state_poke(); break;
         case BLE_GAP_EVENT_ENC_CHANGE:
@@ -336,6 +360,13 @@ int phone_bridge_gap_event(struct ble_gap_event *e) {
     return 0;
 }
 bool phone_bridge_ready(void) { return atomic_load(&ready) && atomic_load(&subscribed); }
+bool phone_bridge_speech_ready(void) { return phone_bridge_ready() && atomic_load(&speech_capable); }
+bool phone_bridge_speech_send(uint8_t type,const void *data,size_t len) {
+    if (!phone_bridge_speech_ready() || len>256 || (type!=SPEECH_REQUEST && type!=SPEECH_STATUS)) return false;
+    speech_message_t message={.gen=atomic_load(&generation),.len=len,.type=type};
+    if (len) memcpy(message.data,data,len);
+    return xQueueSend(speech_messages,&message,0)==pdTRUE;
+}
 int64_t phone_bridge_open(const char *verb,const char *path,const char *const *headers,bool end_body,muse_link_req_cb cb,void *ctx) {
     if (!phone_bridge_ready() || !cb) return 0;
     slot_t *slot=NULL; uint16_t id=0;
