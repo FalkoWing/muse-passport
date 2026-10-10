@@ -165,11 +165,12 @@ int main(int argc,char **argv){
             c.write_text(fakes + bridge + reader + speech_fakes + play + main)
             cjson = ROOT / 'esp32/managed_components/espressif__cjson/cJSON'
             # Leave room in the 4 KiB task for BLE notification and logging.
+            # Measure the task itself without compiler-dependent fake inlining.
             obj = Path(tmp) / 'follow.o'
-            subprocess.run(['cc','-std=gnu11','-O2','-fno-inline-functions','-fstack-usage','-I',str(cjson),'-I',str(MUSE),'-c',str(c),'-o',str(obj)],check=True,capture_output=True,timeout=30)
+            subprocess.run(['cc','-std=gnu11','-O2','-fno-inline','-fstack-usage','-I',str(cjson),'-I',str(MUSE),'-c',str(c),'-o',str(obj)],check=True,capture_output=True,timeout=30)
             usage = obj.with_suffix('.su').read_text().splitlines()
             reader_frames = [int(line.split('\t')[1]) for line in usage
-                             if line.split('\t')[0].endswith(':reader_task')]
+                             if line.split('\t')[0].rsplit(':', 1)[-1].split('.', 1)[0] == 'reader_task']
             self.assertEqual(len(reader_frames), 1, usage)
             self.assertLessEqual(reader_frames[0], 1792, 'reader task leaves too little stack for BLE/logging')
             subprocess.run(['cc','-std=gnu11','-O0','-fsanitize=address,undefined','-I',str(cjson),'-I',str(MUSE),str(c),str(cjson/'cJSON.c'),str(MUSE/'muse_speech_buffer.c'),'-o',str(exe)],check=True,capture_output=True,timeout=30)
