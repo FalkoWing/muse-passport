@@ -166,8 +166,10 @@ int main(int argc,char **argv){
             cjson = ROOT / 'esp32/managed_components/espressif__cjson/cJSON'
             # Leave room in the 4 KiB task for BLE notification and logging.
             # Measure the task itself without compiler-dependent fake inlining.
+            # Match firmware's stack-check mode; Ubuntu defaults add a canary
+            # and prevent reuse of otherwise non-overlapping local buffers.
             obj = Path(tmp) / 'follow.o'
-            subprocess.run(['cc','-std=gnu11','-O2','-fno-inline','-fstack-usage','-I',str(cjson),'-I',str(MUSE),'-c',str(c),'-o',str(obj)],check=True,capture_output=True,timeout=30)
+            subprocess.run(['cc','-std=gnu11','-O2','-fno-inline','-fno-stack-protector','-fstack-usage','-I',str(cjson),'-I',str(MUSE),'-c',str(c),'-o',str(obj)],check=True,capture_output=True,timeout=30)
             usage = obj.with_suffix('.su').read_text().splitlines()
             reader_frames = [int(line.split('\t')[1]) for line in usage
                              if line.split('\t')[0].rsplit(':', 1)[-1].split('.', 1)[0] == 'reader_task']
