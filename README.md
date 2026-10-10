@@ -18,7 +18,7 @@ limitations under the License.
 
 # Muse Passport
 
-<img src="android/assets/muse-passport-icon.svg" width="88" alt="Muse Passport 图标">
+![Muse Passport 设备与角色主页的开发桌面场景示意](assets/muse-passport-developer-scene.png)
 
 把随身设备变成 Muse 对话终端：按住 OK 说话，松开后阅读自己的语音转录与 Muse 文字回复；长内容可以上下翻页，也能回看本轮转录。设备通过蓝牙借用手机网络，目前已在 **FoloToy AI Passport** 实机验证。
 
@@ -60,7 +60,7 @@ Passport BSP 来源与修改保留在 [UPSTREAM.md](esp32/components/passport_bs
 
 ## 下载与刷机
 
-从 [全部 Releases](https://github.com/FalkoWing/muse-passport/releases) 获取 APK 与安装包。1.0.5 正式版新增回复朗读、角色动画和朗读跟页，固件与 Android App 均为 1.0.5；iOS 1.1.0 通过 TestFlight 分发，见“在 iPhone 上使用”。想使用新功能时，请同时更新固件和手机 App；当前使用正常且不需要新功能的设备可以继续使用现有版本。源码不存安装包，封面仅用于玩法社区。
+从 [全部 Releases](https://github.com/FalkoWing/muse-passport/releases) 获取 APK 与安装包。1.0.5 正式版新增回复朗读、角色动画和朗读跟页，固件与 Android App 均为 1.0.5；iOS 1.1.0 通过 TestFlight 分发，见“在 iPhone 上使用”。想使用新功能时，请同时更新固件和手机 App；当前使用正常且不需要新功能的设备可以继续使用现有版本。源码不存安装包。
 
 | 文件 | 用途 |
 |---|---|
@@ -121,6 +121,34 @@ iOS 伴侣 App 通过 TestFlight 分发，需要 iOS 26 或更新；固件与 An
 也可以用 Mac 自行构建伴侣 App：需要 Xcode 26 或更新和一个 Apple ID。用 Xcode 打开 `ios/MusePassport/MusePassport.xcodeproj`，在 MusePassport target 的 Signing & Capabilities 里把 Team 换成自己的，把 Bundle Identifier 改成自己的唯一标识，然后选择自己的 iPhone 运行。免费 Apple ID 也可以，签名 7 天后过期，届时用 Xcode 重新运行一次。
 
 已在 iPhone 14 Pro / iOS 27 实测前台对话、锁屏空闲 10 分钟后对话、设备断电重开后自动恢复、Wi-Fi 与蜂窝网络切换，以及伴侣 App 被系统回收或手动划掉后的对话，这些是在 1.0.1 固件上测的。1.0.3 固件上实测了全新设备完整初始化（官方 Muse App 10.0）、长回复和普通对话；1.0.4 候选固件上已实测短语音、15 秒长语音、蓝牙重连后对话。在 iOS 伴侣 App 里保存 token 仍需进一步实测。
+
+## 配置语音回复（Android / iPhone 通用）
+
+先同时升级到 1.0.5 固件和最新版 Muse Passport 伴侣 App（Android 1.0.5 / iOS 1.1.0）。设备长按下键打开设置，确认“回复朗读”已开启，并调整音量；两端手机的配置都从首页“语音回复”进入。
+
+### 使用手机本机语音
+
+**默认即可朗读，无需申请语音 API Key。** 在伴侣 App 的“语音回复”中点击“试听本机语音”，确认手机能播放中文。Android 提示缺少声包时，点击“下载中文声包”按系统引导安装；iPhone 未检测到中文语音时，按 App 的下载指引添加。保持“云端模型配置”中的云端 TTS 关闭，连接 Passport 后发送一条提问，即可由设备扬声器朗读回复。
+
+### 申请豆包语音 API Key
+
+想使用云端音色时，需自行开通火山引擎的**豆包语音**服务。它负责将 Muse 的回复文字合成为声音；Muse 的 SDK token 仍按前面手机使用章节设置，两种凭据用途不同。
+
+1. 打开[豆包语音新版控制台的 API Key 管理](https://console.volcengine.com/speech/new/setting/apikeys?projectName=default)，注册并登录火山引擎账号。首次使用按提示完成实名认证。
+2. 进入控制台“概览”，从“开通服务 → 前往开通”或左侧“开通管理”开通**豆包语音合成模型 2.0**。首次开通也可按新用户快捷引导操作；确认当前项目中所选模型的服务状态为已开通。
+3. 回到“概览 → 畅快使用 → API 接入”，复制系统默认创建的 API Key；也可在左侧“API Key 管理”点击“创建 API Key”，按页面提示创建后复制。Key 和所开通服务应属于同一项目；上面的直达链接进入 `default` 项目。操作以[官方新版控制台快速入门](https://docs.volcengine.com/docs/DoubaoVoice/QuickStartNewConsole?lang=zh)为准。
+4. 这里需要的是**豆包语音控制台的 API Key**，不是火山方舟大模型的 Key、IAM 的 AK/SK，也不是 Muse 的 `mgst_…` SDK token。新版鉴权无需填写 App ID，见[官方 API Key 使用说明](https://docs.volcengine.com/docs/DoubaoVoice/APIKeyUsage?lang=zh)。密钥只填入自己的伴侣 App，不放进截图或公开分享。
+
+### 在伴侣 App 中填写并验证
+
+1. 打开“语音回复 → 云端模型配置”，开启“启用云端 TTS”，**关闭“使用旧版 App ID / Access Token”**。
+2. “语音模型”选“豆包语音合成 2.0”，在“API Key”粘贴刚复制的语音服务密钥，从下拉框选择该模型配套的音色。第一次可保留默认“可爱女生”；无需另外填写 App ID。
+3. 点击“保存并试听云端语音”。这一步先在手机上验证密钥、服务权限和音色；试听成功后连接 Passport，发送一条提问，确认设备能朗读。手机试听成功不等于设备已经连接。
+4. 想关闭云端时关掉云端 TTS，后续使用本机语音。已有旧版语音应用的用户，可开启旧版鉴权开关，分别填写该应用的 App ID 和 Access Token；新用户优先使用上面的新版 API Key。
+
+云端试听失败时，按 App 提示检查密钥是否有效、Key 所属项目是否开通所选模型、音色是否与模型匹配，以及服务额度或余额。“自定义”模型和音色应填写控制台提供的模型资源 ID、音色 ID；初次配置建议先用预设。
+
+云端语音会把回复文字发送给火山引擎，并可能产生费用；免费额度、资源包余量和后付费规则以控制台“开通管理”及[官方说明](https://docs.volcengine.com/docs/DoubaoVoice/QuickStartNewConsole?lang=zh)为准。未开启或配置未完成时仍使用本机 TTS；云端在设备出声前失败会回退本机语音，已出声后失败则停止本条朗读，文字仍可阅读。
 
 ## 日常对话与按键
 
@@ -208,7 +236,7 @@ swift test
 | `linux/src/musegadget/` | 上游 Noise/API 协议模块；Android 伴侣 App 运行时依赖，iOS 测试向量也由它生成，必须随源码保留 |
 | `NOTICE`、`THIRD_PARTY.md` | 来源、第三方许可与资源例外，须保留 |
 
-`passport` 分支为本项目开发与发行分支；上游 SDK 的更新按需从[官方仓库](https://github.com/facebookincubator/muse-gadget-sdk)合并。上游板型文档、许可和开发规范保留原结构；使用说明集中在本文。构建输出、个人需求/开发经验文档、原机/NVS 备份、凭据和社区封面均不进入源码仓库。
+`passport` 分支为本项目开发与发行分支；上游 SDK 的更新按需从[官方仓库](https://github.com/facebookincubator/muse-gadget-sdk)合并。上游板型文档、许可和开发规范保留原结构；使用说明集中在本文。构建输出、个人需求/开发经验文档、原机/NVS 备份、凭据和社区专用素材均不进入源码仓库；README 场景示意图保留在 `assets/`。
 
 ## 隐私与许可证
 
