@@ -20,9 +20,11 @@
 #include "muse_settings.h"
 #include "muse_state.h"
 #include "muse_locale.h"
+#include "muse_speech.h"
+#include "passport_avatar.h"
 
 static const char *TAG = "passport_ui";
-static lv_obj_t *s_status, *s_face, *s_reply, *s_footer, *s_power;
+static lv_obj_t *s_status, *s_face, *s_reply, *s_footer, *s_power, *s_page_info;
 static lv_obj_t *s_pair, *s_pair_title, *s_pair_detail;
 static uint32_t s_caption_version;
 static volatile bool s_dark;
@@ -101,12 +103,6 @@ static void frame(lv_timer_t *timer)
     const char *status = mode == MUSE_MODE_IDLE && link != MUSE_LINK_ONLINE
                        ? passport_link_name(link) : modes[mode];
     set_text(s_status, status);
-    const char *eyes = mode == MUSE_MODE_LISTENING ? "O    O"
-                     : mode == MUSE_MODE_THINKING ? ".    ."
-                     : muse_state_happiness() > 0 ? "^    ^"
-                     : ((int)(now * 10) % 40 < 2) ? "-    -" : "o    o";
-    set_text(s_face, eyes);
-
     char caption[MUSE_CAPTION_MAX];
     muse_passport_page_t page = {0};
     bool reading = mode != MUSE_MODE_LISTENING && mode != MUSE_MODE_OFF
@@ -120,6 +116,16 @@ static void frame(lv_timer_t *timer)
         changed = muse_state_caption(caption, sizeof(caption), &s_caption_version);
     }
     s_reader_visible = reading;
+    static const lv_image_dsc_t *shown_avatar;
+    if (!menu) {
+        muse_mode_t avatar_mode = muse_speech_started() ? MUSE_MODE_SPEAKING : mode;
+        const lv_image_dsc_t *avatar = passport_avatar_frame(avatar_mode, reading, (unsigned)(now * 10), muse_state_level());
+        if (shown_avatar != avatar) { lv_image_set_src(s_face, avatar); shown_avatar = avatar; }
+        lv_obj_set_pos(s_face, reading ? 20 : 56, reading ? 49 : 71);
+    }
+    lv_obj_set_pos(s_reply, 20, reading ? 108 : 213);
+    lv_obj_set_height(s_reply, reading ? 161 : 64);
+    lv_obj_set_flag(s_page_info, LV_OBJ_FLAG_HIDDEN, !reading);
     if (changed) {
         uint32_t at = 0;
         while (caption[at]) {
@@ -130,6 +136,9 @@ static void frame(lv_timer_t *timer)
             }
         }
         set_text(s_reply, caption);
+    }
+    if (!reading && mode == MUSE_MODE_IDLE && !lv_label_get_text(s_reply)[0]) {
+        set_text(s_reply, "按住 OK，和我说话吧");
     }
     muse_power_t power = muse_state_power();
     char battery[16];
@@ -151,16 +160,18 @@ static void frame(lv_timer_t *timer)
     }
     if (reading && !pairing) {
         set_text(s_status, link != MUSE_LINK_ONLINE ? passport_link_name(link)
+                 : muse_speech_started() ? "正在朗读"
                  : page.assistant ? MUSE_UI_TEXT("MUSE REPLIED", "Muse 已回复") : MUSE_UI_TEXT("YOUR WORDS", "你的话"));
-        char footer[96];
-        snprintf(footer, sizeof(footer), "%s %d/%d 上下翻页\n%s",
-                 page.assistant ? "回复" : "转录", page.role_page, page.role_pages,
-                 link != MUSE_LINK_ONLINE ? MUSE_UI_TEXT("Connect phone to page", "连接手机后翻页")
-                 : page.truncated ? MUSE_UI_TEXT("Text limit: see phone", "完整内容请查看手机") : MUSE_UI_TEXT("Hold DOWN: menu", "长按下键打开设置"));
-        set_text(s_footer, footer);
+        char info[96];
+        snprintf(info, sizeof(info), "%d/%d · %s", page.role_page, page.role_pages,
+                 muse_speech_busy() && muse_link_speech_follow_ready()
+                    && muse_passport_reader_following() ? "跟随" : "手动");
+        set_text(s_page_info, info);
+        set_text(s_footer, link != MUSE_LINK_ONLINE ? "连接手机后翻页"
+                 : page.truncated ? "完整内容请查看手机" : "上下翻页 · 长按下设置");
     } else {
         set_text(s_footer, link == MUSE_LINK_UNPAIRED || link == MUSE_LINK_PAIRING
-                 ? ble.name : MUSE_UI_TEXT("OK: talk   DOWN: menu", "按住 OK 说话\n下键打开设置"));
+                 ? ble.name : "长按下键打开设置");
     }
 }
 
@@ -175,18 +186,18 @@ esp_err_t muse_ui_start(void)
     s_text_font.fallback = &lv_font_montserrat_16;
     lv_obj_t *screen = lv_screen_active();
     lv_obj_remove_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_bg_color(screen, lv_color_hex(0x100d18), 0);
+    lv_obj_set_style_bg_color(screen, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
-    s_status = label(screen, &s_text_font, 20, 24, 155, 22);
-    s_power = label(screen, &lv_font_montserrat_14, 179, 24, 43, 22);
-    s_face = label(screen, &lv_font_montserrat_28, 20, 65, 200, 40);
-    lv_obj_set_style_text_align(s_face, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_color(s_face, lv_color_hex(0xb698ff), 0);
-    s_reply = label(screen, &s_text_font, 20, 119, 200, 147);
+    s_status = label(screen, &s_text_font, 20, 16, 155, 22);
+    s_power = label(screen, &lv_font_montserrat_14, 179, 16, 43, 22);
+    s_face = lv_image_create(screen);
+    s_page_info = label(screen, &s_text_font, 76, 63, 144, 22);
+    lv_obj_add_flag(s_page_info, LV_OBJ_FLAG_HIDDEN);
+    s_reply = label(screen, &s_text_font, 20, 108, 200, 161);
     /* Use the actual bitmap font metrics, not its nominal 16px size. */
-    int lines = (147 + 2) / (lv_font_get_line_height(&s_text_font) + 2);
+    int lines = (161 + 2) / (lv_font_get_line_height(&s_text_font) + 2);
     muse_state_set_page(12, lines);
-    s_footer = label(screen, &s_text_font, 20, 268, 200, 46);
+    s_footer = label(screen, &s_text_font, 20, 291, 200, 22);
 
     muse_menu_build(screen, muse_board->width, muse_board->height);
     s_pair = lv_obj_create(screen);
@@ -205,7 +216,7 @@ esp_err_t muse_ui_start(void)
     }
     s_ready = true;
     muse_board->display_unlock();
-    ESP_LOGI(TAG, "portrait UI ready; text-only replies, no image buffer");
+    ESP_LOGI(TAG, "portrait UI ready; %d text lines, ROM avatar frames", lines);
     return ESP_OK;
 }
 

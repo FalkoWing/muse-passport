@@ -1,5 +1,6 @@
 #include "muse_speech.h"
 #include "muse_speech_buffer.h"
+#include "muse_passport_reader.h"
 #include "muse_link.h"
 #include "muse_audio.h"
 #include "muse_settings.h"
@@ -20,6 +21,7 @@ static SemaphoreHandle_t lock;
 static muse_speech_buffer_t buffer;
 static atomic_bool busy, stopped, started;
 static uint32_t next_session;
+static uint32_t reader_generation;
 static void put32(uint8_t *p, uint32_t n) { for (int i=0;i<4;i++) p[i]=n>>(8*i); }
 /* state: 0 ready, 1 playing, 2 drained, 3 cancelled, 4 failed before
  * playback (may restart), 5 failed after playback (must not switch voice). */
@@ -66,9 +68,11 @@ static void play(void *arg) {
         if (!ready && (count>=4 || ended)) ready=true;
         if (ready && ended && !count) break;
         size_t len=0;
+        uint32_t origin=UINT32_MAX;
         if (ready) {
             xSemaphoreTake(lock,portMAX_DELAY);
             len=muse_speech_buffer_take(&buffer,packet); consumed=buffer.consumed;
+            origin=buffer.taken_origin;
             xSemaphoreGive(lock);
         }
         if (len) {
@@ -85,6 +89,7 @@ static void play(void *arg) {
              * playback before acknowledging STARTED, not merely the BLE FIFO. */
             bool first=!atomic_exchange(&started,true);
             played_frames++;
+            if (origin!=UINT32_MAX) muse_passport_reader_speech_position(reader_generation,origin);
             xSemaphoreTake(lock,portMAX_DELAY); buffer.started=true; xSemaphoreGive(lock);
             muse_state_set_level(muse_audio_level(pcm,960));
             if (first || consumed%4==0) {
@@ -137,9 +142,11 @@ bool muse_speech_request(const char *note,const char *message) {
     cJSON_AddNumberToObject(request,"session",id);
     cJSON_AddNumberToObject(request,"limit",MUSE_SPEECH_WINDOW);
     cJSON_AddStringToObject(request,"note",note); cJSON_AddStringToObject(request,"message",message);
+    if (muse_link_speech_follow_ready()) cJSON_AddStringToObject(request,"speech_follow","source-v1");
     char *body=cJSON_PrintUnformatted(request); cJSON_Delete(request);
     if (!body) return true;
     xSemaphoreTake(lock,portMAX_DELAY); muse_speech_buffer_begin(&buffer,id); xSemaphoreGive(lock);
+    reader_generation=muse_passport_reader_speech_begin(note,message);
     atomic_store(&started,false); atomic_store(&busy,true);
     /* A decoder's scratch stack and state exist only during a reply. */
     bool task_created=xTaskCreate(play,"reply_speech",24576,(void *)(uintptr_t)id,5,NULL)==pdPASS;

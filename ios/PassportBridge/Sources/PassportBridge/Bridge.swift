@@ -10,6 +10,7 @@ public struct BridgeState: Equatable, Sendable {
     public var sdkSettingsPending = false
     public var sdkSettingsStatus = "连接 Passport 后可设置 SDK token"
     public var speechSupported = false
+    public var speechFollowSupported = false
 
     public init() {}
 }
@@ -152,7 +153,10 @@ public actor Bridge {
                let session = request["session"] as? UInt32,
                let limit = request["limit"] as? UInt32,
                let note = request["note"] as? String, let id = request["message"] as? String {
-                await speech?(.request(session: session, text: cache.speechText(note: note, message: id) ?? "", limit: limit))
+                let text = cache.speechText(note: note, message: id) ?? ""
+                if state.speechFollowSupported, request["speech_follow"] as? String == "source-v1" {
+                    await speech?(.followRequest(session: session, text: text, limit: limit))
+                } else { await speech?(.request(session: session, text: text, limit: limit)) }
             }
         case BridgeMessageType.speechStatus:
             if let status = try? SpeechStatus(message.body) { await speech?(.status(status)) }
@@ -176,6 +180,7 @@ public actor Bridge {
         let supported = info["sdk_settings"] as? Bool == true, configured = info["sdk_token_configured"] as? Bool == true
         update {
             $0.speechSupported = speech != nil && text("reply_speech") == "opus-16000-60-v1"
+            $0.speechFollowSupported = $0.speechSupported && text("speech_follow") == "source-v1"
             $0.sdkSettingsSupported = supported
             $0.sdkTokenConfigured = configured
             if !$0.sdkSettingsPending {
@@ -188,7 +193,9 @@ public actor Bridge {
             return
         }
         // Ready means this app is reachable, not that Muse is connected yet.
-        emit(BridgeMessageType.ready, 0, state.speechSupported ? Self.json(["reply_speech": "opus-16000-60-v1"]) : Data())
+        var capability = state.speechSupported ? ["reply_speech": "opus-16000-60-v1"] : [:]
+        if state.speechFollowSupported { capability["speech_follow"] = "source-v1" }
+        emit(BridgeMessageType.ready, 0, Self.json(capability))
         keepConnected(afterDrop: false)
     }
 

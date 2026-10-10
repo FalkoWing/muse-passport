@@ -34,7 +34,7 @@ public final class BridgeService extends Service {
     private PyObject backend;
     private Network network;
     private SpeechEngine speech;
-    private volatile boolean speechSupported;
+    private volatile boolean speechSupported, speechFollowSupported;
     private final BridgeProtocol protocol=new BridgeProtocol();
     private final ArrayDeque<Write> writes=new ArrayDeque<>();
     private boolean busy, scanning, stopping, subscribed;
@@ -175,6 +175,7 @@ public final class BridgeService extends Service {
                 sdkTokenConfigured=info.optBoolean("sdk_token_configured",false);
                 sdkSettingsSupported=info.optBoolean("sdk_settings",false);
                 speechSupported="opus-16000-60-v1".equals(info.optString("reply_speech")) && mtu>=140;
+                speechFollowSupported=speechSupported && "source-v1".equals(info.optString("speech_follow")) && mtu>=144;
                 if (!sdkSettingsPending) sdkSettingsStatus=sdkSettingsSupported
                         ? (sdkTokenConfigured?"SDK token 已设置":"尚未设置 SDK token")
                         : "请升级 Passport 固件以设置 SDK token";
@@ -279,14 +280,15 @@ public final class BridgeService extends Service {
         catch (InterruptedException e) { Thread.currentThread().interrupt(); return false; }
     }
     public byte[] speechReady() {
-        return (speechSupported?"{\"reply_speech\":\"opus-16000-60-v1\"}":"").getBytes(StandardCharsets.UTF_8);
+        return (speechSupported?(speechFollowSupported?"{\"reply_speech\":\"opus-16000-60-v1\",\"speech_follow\":\"source-v1\"}":"{\"reply_speech\":\"opus-16000-60-v1\"}"):"").getBytes(StandardCharsets.UTF_8);
     }
-    public void replySpeech(long session,String text,long limit,long connection) {
+    public void replySpeech(long session,String text,long limit,long connection) {replySpeech(session,text,limit,connection,false);}
+    public void replySpeech(long session,String text,long limit,long connection,boolean follow) {
         if(!speechSupported || connection!=epoch)return;
-        speech.request(session,text,limit,body->sendMessage(BridgeProtocol.SPEECH_DATA,0,body,connection));
+        speech.request(session,text,limit,body->sendMessage(BridgeProtocol.SPEECH_DATA,0,body,connection),follow && speechFollowSupported);
     }
     private void clearConnection() {
-        speechSupported=false; speech.stop();
+        speechSupported=false; speechFollowSupported=false; speech.stop();
         epoch++; stopScan(); subscribed=false; rx=null; protocol.reset();
         sdkSettingsSupported=false;
         if (sdkSettingsPending) sdkSettingsStatus="连接已中断，请重连后检查设置状态";

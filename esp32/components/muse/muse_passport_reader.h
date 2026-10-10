@@ -17,10 +17,16 @@ void muse_passport_reader_reset(void);
 void muse_passport_reader_note(const char *identifier);
 void muse_passport_reader_step(int direction);
 bool muse_passport_reader_page(muse_passport_page_t *out);
+uint32_t muse_passport_reader_speech_begin(const char *note, const char *message);
+void muse_passport_reader_speech_position(uint32_t generation, uint32_t offset);
+bool muse_passport_reader_following(void);
+void muse_passport_reader_resume(void);
 #else
 static inline void muse_passport_reader_start(void) {}
 static inline void muse_passport_reader_reset(void) {}
 static inline void muse_passport_reader_note(const char *identifier) { (void)identifier; }
 static inline void muse_passport_reader_step(int direction) { (void)direction; }
 static inline bool muse_passport_reader_page(muse_passport_page_t *out) { (void)out; return false; }
+static inline bool muse_passport_reader_following(void) { return false; }
+static inline void muse_passport_reader_resume(void) {}
 #endif

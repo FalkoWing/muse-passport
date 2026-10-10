@@ -60,6 +60,10 @@ jobs:
           java -cp /tmp/passport-protocol ProtocolTest
           javac -d /tmp/passport-protocol app/src/main/java/ai/muse/passport/BridgeProtocol.java app/src/main/java/ai/muse/passport/SpeechWire.java tests/SpeechTest.java
           java -cp /tmp/passport-protocol SpeechTest
+          javac -d /tmp/passport-protocol app/src/main/java/ai/muse/passport/CloudSpeechCatalog.java app/src/main/java/ai/muse/passport/CloudSpeechFailure.java tests/CloudSpeechCatalogTest.java
+          java -cp /tmp/passport-protocol ai.muse.passport.CloudSpeechCatalogTest
+          python tests/test_empty_speech.py
+          python tests/test_system_tts.py
       - name: Check the iOS test vectors match the reference implementations
         shell: bash
         run: |
@@ -74,6 +78,12 @@ jobs:
       - name: Test the bridge core
         working-directory: ios/PassportBridge
         run: swift test
+      - name: Test speech session completion without audio
+        run: python3 ios/tools/test_empty_speech.py
+      - name: Test cloud settings defaults and custom IDs
+        run: |
+          python3 ios/tools/test_cloud_speech_settings.py
+          python3 ios/tools/test_cloud_speech_preview.py
       - name: Build the app without signing
         working-directory: ios/MusePassport
         run: |

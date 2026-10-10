@@ -356,6 +356,17 @@ extension Companion: @preconcurrency CBCentralManagerDelegate {
 
 extension Companion: @preconcurrency CBPeripheralDelegate {
     func peripheralIsReady(toSendWriteWithoutResponse peripheral: CBPeripheral) { pump() }
+    func peripheral(_ peripheral: CBPeripheral, didModifyServices invalidatedServices: [CBService]) {
+        guard self.peripheral === peripheral, bridgeEnabled,
+              invalidatedServices.contains(where: { $0.uuid == GATT.bridge }) else { return }
+        // Service Changed invalidates cached characteristics. Reconnect so
+        // pending writes end before discovering the upgraded declarations.
+        problem = nil
+        failures = 0
+        linkStatus = "Passport 服务已更新，正在重新连接…"
+        endBridge()
+        central?.cancelPeripheralConnection(peripheral)
+    }
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         guard let service = peripheral.services?.first(where: { $0.uuid == GATT.bridge }) else {
             linkStatus = "Passport 需要刷入蓝牙桥接固件"

@@ -11,4 +11,5 @@ int64_t phone_bridge_open(const char *verb, const char *path, const char *const 
 bool phone_bridge_send(int64_t id, const void *data, size_t len, bool end_body, int wait_ms);
 void phone_bridge_cancel(int64_t id);
 bool phone_bridge_speech_ready(void);
+bool phone_bridge_speech_follow_ready(void);
 bool phone_bridge_speech_send(uint8_t type, const void *data, size_t len);

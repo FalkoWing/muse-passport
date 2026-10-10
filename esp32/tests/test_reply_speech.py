@@ -77,6 +77,54 @@ int main(void){
 }
 ''', [ROOT / 'components/muse/muse_speech_buffer.c'])
 
+    def test_zero_frame_end_releases_playback_without_audio(self):
+        source = (ROOT / 'components/muse/muse_speech.c').read_text()
+        play = source[source.index('static void play('):source.index('void muse_speech_init')]
+        self.run_c(r'''
+#include "muse_speech_buffer.h"
+#include <assert.h>
+#include <stdatomic.h>
+#include <stdint.h>
+#define portMAX_DELAY 0
+#define pdMS_TO_TICKS(ms) (ms)
+#define MUSE_AUDIO_CHUNK 320
+#define ESP_OK 0
+#define ESP_LOGI(...) ((void)0)
+#define ESP_LOGW(...) ((void)0)
+static int lock;
+static uint32_t reader_generation;
+static void muse_passport_reader_speech_position(uint32_t generation,uint32_t offset){}
+static muse_speech_buffer_t buffer;
+static atomic_bool busy,stopped,started;
+static unsigned decoded,written,deleted,states,last_state;
+static int64_t now;
+static bool feedback(uint32_t id,uint32_t limit,unsigned state){assert(id==7 && limit==0);states++;last_state=state;return true;}
+static bool muse_link_req_ready(void){return true;}
+static bool muse_settings_speaker_on(void){return true;}
+static void *passport_opus_decoder_create(void){return &lock;}
+static void passport_opus_decoder_destroy(void *p){(void)p;}
+static int passport_opus_decode(void *d,const uint8_t *p,size_t len,int16_t *out){decoded++;return 960;}
+static int muse_audio_write(const int16_t *p,unsigned len){written++;return ESP_OK;}
+static unsigned muse_audio_level(const int16_t *p,unsigned len){return 0;}
+static void muse_state_set_level(unsigned level){}
+static void muse_state_set_caption(const char *caption){}
+static int64_t esp_timer_get_time(void){return now+=100000;}
+static void xSemaphoreTake(int lock,int timeout){}
+static void xSemaphoreGive(int lock){}
+static void vTaskDelay(int ticks){}
+static void vTaskDelete(void *task){deleted++;}
+''' + play + r'''
+int main(void){
+ muse_speech_buffer_begin(&buffer,7);busy=true;
+ // Existing session + frame zero + END, without any Opus payload.
+ uint8_t end[9]={7,0,0,0,0,0,0,0,1};
+ assert(muse_speech_buffer_feed(&buffer,end,sizeof(end)));
+ play((void *)(uintptr_t)7);
+ assert(states==1 && last_state==2 && !busy && !started && buffer.session==0);
+ assert(decoded==0 && written==0 && deleted==1);
+}
+''', [ROOT / 'components/muse/muse_speech_buffer.c'])
+
     def test_ok_short_stop_hold_record_and_menu_priority(self):
         source = (ROOT / 'components/muse/muse_input.c').read_text()
         handler = source[source.index('static void talk_button'):source.index('/* A pairing prompt')]

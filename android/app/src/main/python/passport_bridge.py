@@ -408,7 +408,7 @@ class Bridge:
                 cache = self.session.cache if self.session else None
                 text = cache.speech_text(request.get("note", ""), request.get("message", "")) if cache else None
                 if hasattr(self.callbacks, "replySpeech"):
-                    self.callbacks.replySpeech(int(request["session"]), text or "", int(request["limit"]), self.connection_epoch)
+                    self.callbacks.replySpeech(int(request["session"]), text or "", int(request["limit"]), self.connection_epoch, request.get("speech_follow") == "source-v1")
             elif kind in (OPEN, DATA, CANCEL):
                 try:
                     if self.session is None:

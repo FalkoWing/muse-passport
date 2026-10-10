@@ -37,6 +37,7 @@
 #include "muse_locale.h"
 #include "muse_text.h"
 #include "muse_voice.h"
+#include "muse_passport_reader.h"
 #include "muse_wifi.h"
 
 static const char *TAG = "muse_menu";
@@ -66,6 +67,7 @@ static const char *TAG = "muse_menu";
 typedef enum {
     ITEM_VOLUME,
     ITEM_SPEAKER,
+    ITEM_FOLLOW,
     ITEM_BRIGHTNESS,
     ITEM_MIC,
     ITEM_SLEEP,
@@ -89,6 +91,7 @@ static const char *const ITEM_NAMES[ITEM_COUNT] = {
     [ITEM_SPEAKER] = MUSE_UI_TEXT("Speaker", "扬声器"),
 #endif
     [ITEM_BRIGHTNESS] = MUSE_UI_TEXT("Brightness", "屏幕亮度"),
+    [ITEM_FOLLOW] = MUSE_UI_TEXT("Follow speech", "跟随朗读"),
     [ITEM_MIC] = MUSE_UI_TEXT("Mic gain", "麦克风增益"),
     [ITEM_SLEEP] = MUSE_UI_TEXT("Auto-sleep", "自动熄屏"),
     [ITEM_PHONE] = MUSE_UI_TEXT("Phone setup", "蓝牙设置"),
@@ -105,6 +108,7 @@ static const char *const ITEM_NAMES[ITEM_COUNT] = {
 static const char *const ITEM_ACTIONS[ITEM_COUNT] = {
     [ITEM_VOLUME] = MUSE_UI_TEXT("Change", "调整"),
     [ITEM_SPEAKER] = MUSE_UI_TEXT("Toggle", "切换"),
+    [ITEM_FOLLOW] = MUSE_UI_TEXT("Resume", "恢复"),
     [ITEM_BRIGHTNESS] = MUSE_UI_TEXT("Change", "调整"),
     [ITEM_MIC] = MUSE_UI_TEXT("Change", "调整"),
     [ITEM_SLEEP] = MUSE_UI_TEXT("Change", "调整"),
@@ -208,6 +212,10 @@ static void value_text(int item, char *buf, size_t n)
         break;
     case ITEM_BRIGHTNESS:
         snprintf(buf, n, "%d%%", muse_settings_brightness());
+        break;
+    case ITEM_FOLLOW:
+        strlcpy(buf, !muse_link_speech_follow_ready() ? "未就绪"
+                    : muse_passport_reader_following() ? "跟随" : "手动", n);
         break;
     case ITEM_MIC:
         snprintf(buf, n, "%d dB", muse_settings_mic_gain());
@@ -406,6 +414,10 @@ static void activate(int item)
     case ITEM_SPEAKER:
         muse_settings_set_speaker_on(!muse_settings_speaker_on());
         break;
+    case ITEM_FOLLOW:
+        muse_passport_reader_resume();
+        muse_menu_close();
+        return;
     case ITEM_BRIGHTNESS:
         muse_settings_set_brightness(next_step(BRIGHT_STEPS, COUNT(BRIGHT_STEPS), muse_settings_brightness()));
         break;
@@ -454,10 +466,11 @@ static void handle(muse_menu_key_t key)
         }
         break;
     case VIEW_LIST:
-        if (key == MUSE_MENU_DOWN) {
-            do { s_sel = (s_sel + 1) % ITEM_COUNT; } while (!s_rows[s_sel]);
+        if (key == MUSE_MENU_DOWN || key == MUSE_MENU_UP) {
+            int direction = key == MUSE_MENU_UP ? -1 : 1;
+            do { s_sel = (s_sel + ITEM_COUNT + direction) % ITEM_COUNT; } while (!s_rows[s_sel]);
             refresh();
-        } else {
+        } else if (key == MUSE_MENU_SELECT) {
             activate(s_sel);
         }
         break;
@@ -466,7 +479,7 @@ static void handle(muse_menu_key_t key)
         show(VIEW_LIST);
         break;
     case VIEW_POWER:
-        if (key == MUSE_MENU_DOWN) {
+        if (key != MUSE_MENU_SELECT) {
             show(VIEW_LIST);
         } else {
             muse_menu_close();
@@ -474,7 +487,7 @@ static void handle(muse_menu_key_t key)
         }
         break;
     case VIEW_RESET:
-        if (key == MUSE_MENU_DOWN) {
+        if (key != MUSE_MENU_SELECT) {
             show(VIEW_LIST);
         } else {
             muse_menu_close();
@@ -563,6 +576,9 @@ void muse_menu_build(lv_obj_t *parent, int w, int h)
     int row = 0;
     for (int i = 0; i < ITEM_COUNT; i++) {
         s_item_row[i] = -1;
+#if !CONFIG_MUSE_PHONE_BRIDGE
+        if (i == ITEM_FOLLOW) continue;
+#endif
 #if CONFIG_MUSE_PHONE_BRIDGE
         /* The bridge uses phone networking. Do not offer controls for an
          * unused Wi-Fi path or unsupported power-off. */
@@ -613,6 +629,8 @@ void muse_menu_build(lv_obj_t *parent, int w, int h)
     s_hint_select = label(s_root, font, COLOR_TEXT, "");
     align_on_bar(s_hint_select, talk->align, pad);
 #if CONFIG_MUSE_BOARD_FOLOTOY_PASSPORT
+    s_down_text = "上下：选择";
+    set_text(s_hint_down, s_down_text);
     lv_obj_align(s_hint_select, LV_ALIGN_BOTTOM_RIGHT, -20, -12);
     lv_obj_align(s_hint_down, LV_ALIGN_BOTTOM_LEFT, 20, -12);
 #endif

@@ -426,8 +426,9 @@ static void input_task(void *arg)
         unsigned ev = muse_board->poll_buttons();
         if (ev & MUSE_BTN_PREV_PRESS) {
             if (muse_state_asleep()) set_asleep(false, "UP");
-            else if (!s_talk_down && !muse_menu_is_open()) {
-                muse_passport_reader_step(-1);
+            else if (!s_talk_down) {
+                if (muse_menu_is_open()) muse_menu_key(MUSE_MENU_UP);
+                else muse_passport_reader_step(-1);
                 muse_state_poke();
             }
         }

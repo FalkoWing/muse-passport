@@ -36,6 +36,7 @@ static uint16_t tx_handle;
 static atomic_int conn=BLE_HS_CONN_HANDLE_NONE;
 static atomic_bool ready, subscribed;
 static atomic_bool speech_capable;
+static atomic_bool speech_follow_capable;
 typedef struct { uint32_t gen; uint16_t len; uint8_t type, data[256]; } speech_message_t;
 static QueueHandle_t speech_messages;
 static atomic_uint generation, waiting_ack;
@@ -130,6 +131,7 @@ static void credentials(void) {
     cJSON_AddStringToObject(root,"sdk_token",identity_sdk_token()?identity_sdk_token():"");
     cJSON_AddBoolToObject(root,"sdk_settings",true);
     cJSON_AddStringToObject(root,"reply_speech","opus-16000-60-v1");
+    cJSON_AddStringToObject(root,"speech_follow","source-v1");
     cJSON_AddBoolToObject(root,"sdk_token_configured",identity_sdk_token()!=NULL);
     char vm[MUSE_VM_MAX+1]; muse_settings_hatch_vm(vm);
     cJSON_AddStringToObject(root,"vm_id",vm);
@@ -204,6 +206,9 @@ static void worker(void *arg) {
                             const char *s=cJSON_GetStringValue(cJSON_GetObjectItem(r,"reply_speech"));
                             atomic_store(&speech_capable,s && !strcmp(s,"opus-16000-60-v1")
                                 && ble_att_mtu(atomic_load(&conn))>=140);
+                            const char *follow=cJSON_GetStringValue(cJSON_GetObjectItem(r,"speech_follow"));
+                            atomic_store(&speech_follow_capable,atomic_load(&speech_capable)
+                                && follow && !strcmp(follow,"source-v1") && ble_att_mtu(atomic_load(&conn))>=144);
                             cJSON_Delete(r);
                         }
                         atomic_store(&ready,true); muse_state_poke();
@@ -239,8 +244,9 @@ static int access(uint16_t handle,uint16_t attr,struct ble_gatt_access_ctxt *ctx
         return 0;
     }
     if (type==SPEECH_DATA) {
-        if (!speech_capable || flags!=3 || off || n<HEADER+9 || n>HEADER+129)
+        if (!speech_capable || flags!=3 || off || n<HEADER+9 || n>HEADER+(speech_follow_capable?133:129))
             return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+        if (b[HEADER+8]==5 && !speech_follow_capable) return BLE_ATT_ERR_REQ_NOT_SUPPORTED;
         muse_speech_receive(b+HEADER,n-HEADER);
         return 0;
     }
@@ -338,6 +344,7 @@ int phone_bridge_gap_event(struct ble_gap_event *e) {
             break;
         case BLE_GAP_EVENT_DISCONNECT:
             atomic_store(&speech_capable,false); muse_speech_stop();
+            atomic_store(&speech_follow_capable,false);
             atomic_store(&conn,BLE_HS_CONN_HANDLE_NONE); atomic_store(&ready,false); atomic_store(&subscribed,false);
             atomic_fetch_add(&generation,1); clear_incoming(); xSemaphoreGive(ack_sem); muse_state_poke(); break;
         case BLE_GAP_EVENT_ENC_CHANGE:
@@ -361,6 +368,7 @@ int phone_bridge_gap_event(struct ble_gap_event *e) {
 }
 bool phone_bridge_ready(void) { return atomic_load(&ready) && atomic_load(&subscribed); }
 bool phone_bridge_speech_ready(void) { return phone_bridge_ready() && atomic_load(&speech_capable); }
+bool phone_bridge_speech_follow_ready(void) { return phone_bridge_speech_ready() && atomic_load(&speech_follow_capable); }
 bool phone_bridge_speech_send(uint8_t type,const void *data,size_t len) {
     if (!phone_bridge_speech_ready() || len>256 || (type!=SPEECH_REQUEST && type!=SPEECH_STATUS)) return false;
     speech_message_t message={.gen=atomic_load(&generation),.len=len,.type=type};

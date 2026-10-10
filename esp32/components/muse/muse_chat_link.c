@@ -89,6 +89,7 @@ typedef struct {
     bool ok;            /* the page parsed */
     bool found;         /* it had a row */
     bool ready;         /* display_text_ready */
+    bool agent_busy;
     uint64_t seq;
     char event[24];
     char msg[80];
@@ -121,7 +122,7 @@ static struct {
     uint64_t after;                     /* history seq read up to */
     char note_id[80];
     int64_t t_end, t_poll, t_reply, t_show;
-    bool heard, replied, skipped_big, speech_active;
+    bool heard, replied, skipped_big, speech_active, agent_busy;
     bool after_note;                    /* the walk is past the note's row, before any other user row */
     char error[EV_TEXT];                /* why the turn failed, repeated at the release */
     char text[TEXT_MAX];
@@ -353,6 +354,10 @@ static bool parse_object(scan_t *sp, row_t *r)
             if (!parse_object(&s, r)) {
                 return false;
             }
+        } else if (!strcmp(key, "agent_busy")) {
+            skip_ws(&s);
+            r->agent_busy = s.end - s.p >= 4 && !memcmp(s.p, "true", 4);
+            if (!skip_value(&s)) return false;
         } else if (strcmp(key, "chat_events")) {
             if (!skip_value(&s)) {
                 return false;
@@ -632,6 +637,7 @@ static void on_page(void)
         s_turn.skipped_big |= rx->overflow;
         return;
     }
+    s_turn.agent_busy = s_row.agent_busy;
     if (!s_turn.marked) {
         s_turn.marked = true;
         s_turn.after = s_row.found ? s_row.seq : 0;
@@ -692,12 +698,14 @@ static void pump(void)
 #else
             scroll(now)
 #endif
-            && now - s_turn.t_reply > SETTLE_US && !muse_speech_busy()) {
+            && now - s_turn.t_reply > SETTLE_US && !muse_speech_busy()
+            && (!s_turn.agent_busy || now - s_turn.t_end > 180LL * 1000000)) {
             ESP_LOGI(TAG, "reply done: %u chars", (unsigned)strlen(s_turn.text));
             end_turn();
             emit(MUSE_HATCH_EV_DONE, NULL);
         }
-    } else if (now - s_turn.t_end > REPLY_TIMEOUT_US) {
+    } else if (now - s_turn.t_end > REPLY_TIMEOUT_US
+               && (!s_turn.agent_busy || now - s_turn.t_end > 180LL * 1000000)) {
         fail(s_turn.skipped_big ? MUSE_UI_TEXT("REPLY TOO LONG", "回复过长，请查看手机") : MUSE_UI_TEXT("NO REPLY FROM MUSE", "Muse 暂未回复，请重试"));
     }
 }

@@ -5,7 +5,7 @@ struct ContentView: View {
     @State private var editingToken = false
     @State private var confirmingClear = false
     @State private var confirmingRemoval = false
-    @State private var editingSpeech = false
+    @Bindable private var speechSettings = SpeechSettings.shared
 
     private var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
@@ -51,8 +51,22 @@ struct ContentView: View {
                     .disabled(!state.sdkSettingsSupported || state.sdkSettingsPending)
                 }
 
-                Section("回复朗读") {
-                    Button("声音与云端设置") { editingSpeech = true }
+                Section("语音回复") {
+                    Text("默认使用本机 TTS，将 Muse 的文字回复朗读到 Passport，无需云端账号，也不会为语音合成上传回复文字。")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                    LabeledContent("当前朗读来源", value: speechSettings.sourceDescription)
+                    Label(companion.speechPlayer.systemVoiceAvailable ? "本机中文语音可用" : "未检测到本机中文语音", systemImage: "speaker.wave.2")
+                    if !companion.speechPlayer.systemVoiceAvailable {
+                        Link("下载中文语音的方法", destination: URL(string: "https://support.apple.com/zh-cn/111798")!)
+                    }
+                    Button(companion.speechPlayer.previewing ? "正在试听…" : "试听本机语音") {
+                        companion.speechPlayer.preview(useCloud: false)
+                    }.disabled(companion.speechPlayer.previewing || !companion.speechPlayer.systemVoiceAvailable)
+                    NavigationLink("云端模型配置") { CloudSpeechEditor(player: companion.speechPlayer) }
+                    Text("云端提供更多音色和更丰富的语气表现；需要联网，可能产生服务费用，回复文字会发送给火山引擎。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    Text("云端未配置或未开启时使用本机 TTS；开播前失败也会回退本机。已开播后失败只停止本条，文字仍可阅读。")
+                        .font(.footnote).foregroundStyle(.secondary)
                     if !companion.speechPlayer.status.isEmpty { Text(companion.speechPlayer.status) }
                     Text("朗读开关和音量在 Passport 菜单中设置。播放中短按 OK 停止，按住 OK 开始新录音。")
                         .font(.footnote).foregroundStyle(.secondary)
@@ -70,7 +84,6 @@ struct ContentView: View {
             }
             .navigationTitle("Muse Passport")
             .sheet(isPresented: $editingToken) { TokenEditor { companion.updateSDKToken($0) } }
-            .sheet(isPresented: $editingSpeech) { SpeechEditor(player: companion.speechPlayer) }
             .confirmationDialog("清除 SDK token？", isPresented: $confirmingClear, titleVisibility: .visible) {
                 Button("清除", role: .destructive) { companion.updateSDKToken(nil) }
             } message: {
@@ -85,43 +98,118 @@ struct ContentView: View {
     }
 }
 
-private struct SpeechEditor: View {
+private struct CloudSpeechEditor: View {
     @Bindable private var settings = SpeechSettings.shared
     @Bindable var player: SpeechPlayer
+    @State private var cloud: Bool
+    @State private var legacy: Bool
+    @State private var appID: String
+    @State private var modelChoice: String
+    @State private var voiceChoice: String
+    @State private var customModel: String
+    @State private var customVoice: String
     @State private var secret = ""
     @Environment(\.dismiss) private var dismiss
+    init(player: SpeechPlayer) {
+        self.player = player
+        let settings = SpeechSettings.shared
+        _cloud = State(initialValue: settings.cloud)
+        _legacy = State(initialValue: settings.legacy)
+        _appID = State(initialValue: settings.appID)
+        let initialResource = settings.resource.isEmpty ? CloudSpeechCatalog.modelID : settings.resource
+        let initialVoice = settings.voice.isEmpty ? CloudSpeechCatalog.voices(for: initialResource).first?.id ?? "" : settings.voice
+        _modelChoice = State(initialValue: CloudSpeechCatalog.models.contains(where: { $0.id == initialResource })
+                             ? initialResource : CloudSpeechCatalog.custom)
+        _voiceChoice = State(initialValue: CloudSpeechCatalog.voices(for: initialResource).contains(where: { $0.id == initialVoice })
+                             ? initialVoice : CloudSpeechCatalog.custom)
+        _customModel = State(initialValue: initialResource)
+        _customVoice = State(initialValue: initialVoice)
+    }
+    private var resource: String {
+        (modelChoice == CloudSpeechCatalog.custom ? customModel : modelChoice).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    private var voice: String {
+        (voiceChoice == CloudSpeechCatalog.custom ? customVoice : voiceChoice).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    private var savedSecret: Bool { settings.hasSecret && legacy == settings.legacy }
+    private var canPreview: Bool {
+        cloud && (savedSecret || !secret.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            && (!legacy || !appID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) && !resource.isEmpty && !voice.isEmpty
+    }
+    private func save() -> Bool {
+        let saved = settings.save(cloud: cloud, legacy: legacy, appID: appID, resource: resource, voice: voice, secret: secret)
+        if saved { secret = "" }
+        return saved
+    }
     var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    Toggle("使用火山／豆包", isOn: $settings.cloud)
-                    if settings.cloud {
-                        Toggle("旧版 App ID / Access Token", isOn: $settings.legacy)
-                        if settings.legacy { TextField("App ID", text: $settings.appID) }
-                        SecureField(settings.hasSecret ? "已保存密钥，留空保持" : settings.legacy ? "Access Token" : "API Key", text: $secret)
-                        TextField("Resource ID", text: $settings.resource)
-                        TextField("音色 ID（speaker）", text: $settings.voice)
-                        Button("清除已保存密钥", role: .destructive) { settings.clearSecret() }
+        Form {
+            Section {
+                Toggle("启用云端 TTS", isOn: $cloud)
+            } header: {
+                Text("火山引擎／豆包")
+            } footer: {
+                Text(cloud ? "保存后优先使用云端；配置未完成时仍使用本机 TTS。" : "当前使用本机 TTS。开启后可配置云端模型和音色，关闭不会删除已保存配置。")
+            }
+            if cloud {
+                Section("模型与音色") {
+                    Picker("语音模型", selection: $modelChoice) {
+                        ForEach(CloudSpeechCatalog.models, id: \.id) { Text($0.name).tag($0.id) }
+                        Text("自定义").tag(CloudSpeechCatalog.custom)
                     }
-                } footer: {
-                    Text(settings.cloud ? "使用火山语音控制台中的密钥与匹配音色。密钥仅保存在本机钥匙串，回复文字会发送给火山合成。未开播失败时尝试内置语音，开播后失败只停止。" : "使用 iPhone 内置中文语音，不需云端账号。")
+                    .pickerStyle(.menu)
+                    .onChange(of: resource) { _, value in
+                        if voiceChoice != CloudSpeechCatalog.custom
+                            && !CloudSpeechCatalog.voices(for: value).contains(where: { $0.id == voiceChoice }) {
+                            if let first = CloudSpeechCatalog.voices(for: value).first {
+                                voiceChoice = first.id
+                            } else {
+                                customVoice = voiceChoice
+                                voiceChoice = CloudSpeechCatalog.custom
+                            }
+                        }
+                    }
+                    if modelChoice == CloudSpeechCatalog.custom {
+                        TextField("模型资源 ID", text: $customModel)
+                    }
+                    Picker("音色", selection: $voiceChoice) {
+                        ForEach(CloudSpeechCatalog.voices(for: resource), id: \.id) { Text($0.name).tag($0.id) }
+                        Text("自定义").tag(CloudSpeechCatalog.custom)
+                    }
+                    .pickerStyle(.menu)
+                    if voiceChoice == CloudSpeechCatalog.custom {
+                        TextField("音色 ID", text: $customVoice)
+                    }
+                    Text("请在火山控制台开通所选服务。自定义音色需与模型资源 ID 匹配，保存后可试听。")
+                        .font(.footnote).foregroundStyle(.secondary)
                 }
                 .textInputAutocapitalization(.never).autocorrectionDisabled()
-                Section {
-                    Button(player.previewing ? "正在试听…" : "保存并在手机试听") {
-                        if settings.save(secret: secret) { secret = ""; player.preview() }
-                    }.disabled(player.previewing)
-                    if !player.status.isEmpty { Text(player.status) }
-                    if !settings.status.isEmpty { Text(settings.status) }
+                Section("账号配置") {
+                    Toggle("使用旧版 App ID / Access Token", isOn: $legacy)
+                        .onChange(of: legacy) { _, _ in secret = "" }
+                    if legacy { TextField("App ID", text: $appID) }
+                    SecureField(savedSecret ? "已保存密钥，留空保持" : legacy ? "Access Token" : "API Key", text: $secret)
+                    Text(legacy ? "填写旧版语音控制台的 App ID 和 Access Token。" : "填写新版语音控制台的 API Key，无需 App ID。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    Button("清除已保存密钥", role: .destructive) { settings.clearSecret(); secret = "" }
+                        .disabled(!settings.hasSecret)
                 }
+                .textInputAutocapitalization(.never).autocorrectionDisabled()
             }
-            .navigationTitle("回复声音").navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("保存") { if settings.save(secret: secret) { secret = ""; dismiss() } }
+            Section {
+                if cloud {
+                    Button(player.previewing ? "正在试听…" : "保存并试听云端语音") {
+                        if save() { player.preview(useCloud: true) }
+                    }.disabled(player.previewing || !canPreview)
                 }
+                if !player.status.isEmpty { Text(player.status) }
+                if !settings.status.isEmpty { Text(settings.status) }
+            } footer: {
+                Text("密钥仅安全保存在手机，回复文字会发送给火山合成。未配置、未开启或开播前失败时使用本机 TTS；已开播后失败只停止，文字仍可阅读。")
             }
+        }
+        .navigationTitle("云端模型配置").navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) { Button("保存") { if save() { dismiss() } } }
         }
         .onDisappear { secret = "" }
     }

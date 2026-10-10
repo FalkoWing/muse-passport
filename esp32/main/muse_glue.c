@@ -410,6 +410,7 @@ static const muse_link_ops_t s_ops = {
     .req_send = phone_bridge_send,
     .req_cancel = phone_bridge_cancel,
     .speech_ready = phone_bridge_speech_ready,
+    .speech_follow_ready = phone_bridge_speech_follow_ready,
     .speech_send = phone_bridge_speech_send,
 #else
     .req_ready = noise_ctrl_is_connected,

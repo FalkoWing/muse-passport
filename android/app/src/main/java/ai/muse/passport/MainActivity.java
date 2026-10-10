@@ -22,7 +22,8 @@ public final class MainActivity extends Activity {
     private TextView state,deviceName,stateHint,settingsState;
     private Button settings;
     private Button connect,disconnect,choose;
-    private TextView speechState;
+    private TextView speechState,speechSource,localVoiceState;
+    private Button downloadVoice,localPreview;
     private BluetoothLeScanner scanner;
     private AlertDialog picker;
     private ArrayAdapter<String> devicesAdapter;
@@ -39,6 +40,14 @@ public final class MainActivity extends Activity {
         settingsState.setText(BridgeService.sdkSettingsStatus);
         settings.setEnabled(BridgeService.sdkSettingsSupported && !BridgeService.sdkSettingsPending);
         speechState.setText(SpeechEngine.status);
+        speechState.setVisibility(SpeechEngine.status.isEmpty()?View.GONE:View.VISIBLE);
+        speechSource.setText("当前朗读来源："+new SpeechSettings(MainActivity.this).sourceDescription());
+        SpeechEngine.SystemVoice available=SpeechEngine.systemVoice;
+        localVoiceState.setText(available==SpeechEngine.SystemVoice.READY?"本机中文语音可用，无需下载":
+                available==SpeechEngine.SystemVoice.CHECKING?"正在检查本机中文语音…":
+                available==SpeechEngine.SystemVoice.MISSING?"缺少中文离线声包，下载后可使用本机 TTS":"系统语音引擎不可用，请检查系统文字转语音设置");
+        downloadVoice.setVisibility(available==SpeechEngine.SystemVoice.MISSING || available==SpeechEngine.SystemVoice.UNAVAILABLE?View.VISIBLE:View.GONE);
+        localPreview.setEnabled(available==SpeechEngine.SystemVoice.READY);
         String selected=getSharedPreferences("bridge",0).getString("name","");
         deviceName.setText(selected.isEmpty() ? "尚未选择设备" : selected);
         tick.postDelayed(this,500);
@@ -94,9 +103,16 @@ public final class MainActivity extends Activity {
         settingsState=text("",14,MUTED,false);add(device,settingsState,14);
         settings=button("设备设置",false);settings.setOnClickListener(v->deviceSettings());add(device,settings,8);
         LinearLayout speech=card(box,16);
-        add(speech,text("回复朗读",18,INK,true),0);
+        add(speech,text("语音回复",18,INK,true),0);
+        add(speech,text("默认使用本机 TTS，将 Muse 的文字回复朗读到 Passport，无需云端账号，也不会为语音合成上传回复文字。",14,MUTED,false),10);
+        speechSource=text("",16,INK,true);add(speech,speechSource,12);
+        localVoiceState=text("正在检查本机中文语音…",14,MUTED,false);add(speech,localVoiceState,10);
+        downloadVoice=button("下载中文声包",false);downloadVoice.setVisibility(View.GONE);downloadVoice.setOnClickListener(v->downloadSystemVoice());add(speech,downloadVoice,8);
+        localPreview=button("试听本机语音",false);localPreview.setOnClickListener(v->SpeechEngine.get(this).preview(false));add(speech,localPreview,8);
+        Button voice=button("云端模型配置  ›",false);voice.setOnClickListener(v->startActivity(new Intent(this,CloudSpeechActivity.class)));add(speech,voice,16);
+        add(speech,text("云端提供更多音色和更丰富的语气表现；需要联网，可能产生服务费用，回复文字会发送给火山引擎。",14,MUTED,false),10);
+        add(speech,text("云端未配置或未开启时使用本机 TTS；开播前失败也会回退本机。已开播后失败只停止本条，文字仍可阅读。",14,MUTED,false),10);
         speechState=text(SpeechEngine.status,14,MUTED,false);add(speech,speechState,10);
-        Button voice=button("声音与云端设置",false);voice.setOnClickListener(v->speechSettings());add(speech,voice,10);
         add(speech,text("朗读开关和音量在 Passport 菜单中设置。播放中短按 OK 停止，按住 OK 开始新录音。",14,MUTED,false),10);
         LinearLayout guide=card(box,16);
         add(guide,text("开始对话",18,INK,true),0);
@@ -115,33 +131,15 @@ public final class MainActivity extends Activity {
                         .setPositiveButton("清除",(dialog,which)->sendSdkSettings("clear",null)).setNegativeButton("取消",null).show())
                 .setNegativeButton("关闭",null).show();
     }
-    private void speechSettings() {
-        SpeechSettings options=new SpeechSettings(this);
-        LinearLayout form=new LinearLayout(this);form.setOrientation(LinearLayout.VERTICAL);form.setPadding(dp(24),dp(8),dp(24),dp(8));
-        Switch cloud=new Switch(this);cloud.setText("使用火山／豆包");cloud.setChecked(options.cloud);add(form,cloud,0);
-        Switch legacy=new Switch(this);legacy.setText("旧版 App ID / Access Token");legacy.setChecked(options.legacy);add(form,legacy,12);
-        EditText app=new EditText(this);app.setHint("App ID（旧版鉴权）");app.setText(options.appId);add(form,app,8);
-        EditText secret=new EditText(this);secret.setHint(options.hasSecret()?"已保存密钥，留空保持":"API Key 或 Access Token");
-        secret.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        secret.setSaveEnabled(false);secret.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);add(form,secret,8);
-        EditText resource=new EditText(this);resource.setHint("Resource ID");resource.setText(options.resource);add(form,resource,8);
-        EditText voice=new EditText(this);voice.setHint("音色 ID（speaker）");voice.setText(options.voice);add(form,voice,8);
-        for(EditText input:new EditText[]{app,resource,voice}){input.setSingleLine(true);input.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);}
-        add(form,text("密钥仅在本机安全加密保存。使用云端会把回复文字发送给火山；只有未开播的失败才尝试内置语音。内置方案需要中文离线声包。",13,MUTED,false),12);
-        Button clear=button("清除云端密钥",false);clear.setOnClickListener(v->{try{options.clear();secret.getText().clear();secret.setHint("API Key 或 Access Token");Toast.makeText(this,"密钥已清除",Toast.LENGTH_SHORT).show();}catch(Exception e){Toast.makeText(this,"清除失败，请重试",Toast.LENGTH_SHORT).show();}});add(form,clear,8);
-        Button install=button("安装系统语音数据",false);install.setOnClickListener(v->{try{startActivity(new Intent(android.speech.tts.TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA));}catch(ActivityNotFoundException e){Toast.makeText(this,"请在系统文字转语音设置中安装中文声包",Toast.LENGTH_LONG).show();}});add(form,install,8);
-        ScrollView scroll=new ScrollView(this);scroll.addView(form);
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("回复声音").setView(scroll)
-                .setPositiveButton("保存",null).setNeutralButton("保存并试听",null).setNegativeButton("关闭",null).create();
-        dialog.setOnDismissListener(d->secret.getText().clear());dialog.show();dialog.getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
-        Runnable save=()->{
-            options.cloud=cloud.isChecked();options.legacy=legacy.isChecked();options.appId=app.getText().toString();
-            options.resource=resource.getText().toString();options.voice=voice.getText().toString();
-            try{options.save(secret.getText().toString().trim());secret.getText().clear();Toast.makeText(this,"已保存",Toast.LENGTH_SHORT).show();}
-            catch(Exception e){throw new IllegalStateException("无法安全保存密钥");}
-        };
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{try{save.run();dialog.dismiss();}catch(Exception e){Toast.makeText(this,"无法安全保存，请重试",Toast.LENGTH_SHORT).show();}});
-        dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v->{try{save.run();SpeechEngine.get(this).preview();}catch(Exception e){Toast.makeText(this,"无法安全保存，请重试",Toast.LENGTH_SHORT).show();}});
+    private void downloadSystemVoice() {
+        String engine=SpeechEngine.get(this).systemEngine();
+        Intent install=new Intent(android.speech.tts.TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA);
+        if(engine!=null && !engine.isEmpty())install.setPackage(engine);
+        try{startActivity(install);}
+        catch(ActivityNotFoundException e){new AlertDialog.Builder(this).setTitle("下载中文声包")
+                .setMessage("请在系统设置中搜索“文字转语音”，为当前语音引擎下载中文离线声包。安装完成后返回本应用，会重新检查可用状态。")
+                .setPositiveButton("打开系统设置",(d,w)->startActivity(new Intent(android.provider.Settings.ACTION_SETTINGS)))
+                .setNegativeButton("关闭",null).show();}
     }
     private void editSdkToken() {
         EditText input=new EditText(this);input.setSingleLine(true);input.setHint("mgst_…");
@@ -225,6 +223,6 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request==2 && result==RESULT_OK)continueAction();}
     @Override protected void onSaveInstanceState(Bundle out){out.putBoolean("connect_after_selection",connectAfterSelection);super.onSaveInstanceState(out);}
-    @Override public void onResume(){super.onResume();tick.post(refresh);}
+    @Override public void onResume(){super.onResume();SpeechEngine.get(this).checkSystemVoice();tick.post(refresh);}
     @Override public void onPause(){tick.removeCallbacks(refresh);if(picker!=null)picker.dismiss();stopScan();super.onPause();}
 }

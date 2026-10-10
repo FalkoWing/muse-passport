@@ -223,6 +223,23 @@ def reply_cache():
         .reader("?note=note").feed(b"not json\n"))
     s["subscription line limit"] = turn().fill(0x78, 1024 * 1024 + 1)
 
+    s["explicit server busy without message id"] = (
+        turn().feed(event("agent.status", activity_code="working")).page("/chat/history?after_seq=1")
+        .feed(event("task.status", status="completed")).page("/chat/history?after_seq=1")
+        .feed(event("agent.status", activity_code="working")).begin().note("new-note").page("/chat/history"))
+    s["source following and late transcription"] = (
+        turn().feed(event("message.assistant", message_id="r", reply_to_message_id="note", display_text="甲" * 84 + "乙" * 84))
+        .reader("?note=note&message=r&offset=84&cols=12&lines=7")
+        .feed(event("message.user", message_id="note", display_text="问" * 90))
+        .reader("?note=note&message=r&offset=84&cols=12&lines=7")
+        .reader("?note=note&message=r&offset=84&cols=12&lines=6")
+        .reader("?note=note&message=other&offset=0")
+        .reader("?note=note&message=r&offset=-1"))
+    s["short replies share a page"] = (
+        turn().feed(event("message.assistant", message_id="first", reply_to_message_id="note", display_text="甲"))
+        .feed(event("message.assistant", message_id="second", reply_to_message_id="first", display_text="乙"))
+        .reader("?note=note&message=second&offset=0&lines=7"))
+
     wraps = [("", 12, 6), ("ab\n\ncd", 12, 6), ("x" * 72, 12, 6), ("😀" * 150 + "\n\n" + "中文" * 50, 12, 6),
              ("the quick brown fox jumps over the lazy dog", 12, 6), ("a\tb\r\nc  d e", 3, 2),
              (" leading and trailing ", 4, 1), ("\n\n", 12, 6), ("é" * 10, 5, 2)]

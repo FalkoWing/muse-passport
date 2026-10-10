@@ -16,12 +16,14 @@ class ReplyCache:
         self.mark = 0
         self.note_id = ""
         self.note_ids = set()
+        self.agent_busy = False
 
     def begin(self):
         self.mark = self.seq
         self.note_id = ""
         self.rows.clear()
         self.note_ids.clear()
+        self.agent_busy = False
 
     def note(self, identifier, reply_identifier=""):
         self.note_id = identifier
@@ -72,10 +74,18 @@ class ReplyCache:
             if item.get("type") != "event":
                 continue
             payload = item.get("payload") or {}
+            event = item.get("event", "")
+            if event in ("agent.status", "task.status"):
+                code = payload.get("activity_code")
+                status = payload.get("status")
+                if isinstance(code, str):
+                    self.agent_busy = bool(code and code not in ("online", "idle"))
+                elif isinstance(status, str):
+                    self.agent_busy = bool(status and status not in ("completed", "failed"))
+                continue
             identifier = payload.get("message_id") or item.get("message_id") or payload.get("id")
             if not identifier:
                 continue
-            event = item.get("event", "")
             parent = payload.get("reply_to_message_id") or payload.get("parent_message_id") or ""
             text = payload.get("display_text") or payload.get("content") or ""
             if event in ("message.user", "message.assistant"):
@@ -137,7 +147,7 @@ class ReplyCache:
                         visible["message_id"] = self.note_id
                     rows = [visible]
                     break
-        return json.dumps({"ok": True, "result": {"chat_events": rows}},
+        return json.dumps({"ok": True, "result": {"chat_events": rows, "agent_busy": self.agent_busy}},
                           ensure_ascii=False, separators=(",", ":")).encode()
 
     def reader_page(self, path):
@@ -146,7 +156,7 @@ class ReplyCache:
         if query.get("note", [""])[0] != self.note_id or not self.note_id:
             return b'{"ok":false}'
         cols = max(1, min(12, int(query.get("cols", [12])[0])))
-        lines = max(1, min(6, int(query.get("lines", [6])[0])))
+        lines = max(1, min(7, int(query.get("lines", [6])[0])))
         related = set(self.note_ids)
         for _ in range(len(self.rows)):
             for row in self.rows.values():
@@ -155,6 +165,8 @@ class ReplyCache:
                     related.add(row["message_id"])
         users = []
         replies = []
+        reply_starts = {}
+        reply_length = 0
         truncated = False
         ready = True
         for identifier, row in self.rows.items():
@@ -169,15 +181,25 @@ class ReplyCache:
                 # Stable completed messages: their page boundaries cannot move
                 # under the reader as more streaming tokens arrive.
                 if row["display_text_ready"] and text:
+                    reply_starts[identifier] = reply_length + (2 if replies else 0)
+                    reply_length = reply_starts[identifier] + len(text)
                     replies.append(text)
                     truncated |= row.get("truncated", False)
         user_pages = wrap_pages(users[0] if users else "", cols, lines)
         reply_text = "\n\n".join(replies).encode('utf-8')
         truncated |= len(reply_text) > TEXT_LIMIT
-        reply_pages = wrap_pages(reply_text[:TEXT_LIMIT].decode('utf-8', errors='ignore'), cols, lines)
+        reply_pages, starts = wrap_page_layout(reply_text[:TEXT_LIMIT].decode('utf-8', errors='ignore'), cols, lines)
         pages = user_pages + reply_pages
         selected = int(query.get("page", [-1])[0])
-        if selected < 0:
+        if query.get("message") and query.get("offset"):
+            message = query["message"][0]
+            offset = int(query["offset"][0])
+            row = self.rows.get(message)
+            if message not in reply_starts or not row or not 0 <= offset < len(row.get("reader_text", "")):
+                return b'{"ok":false}'
+            source = reply_starts[message] + offset
+            selected = len(user_pages) + max((i for i, start in enumerate(starts) if start <= source), default=0)
+        elif selected < 0:
             selected = len(user_pages) if reply_pages else 0
         selected = max(0, min(len(pages) - 1, selected))
         is_reply = selected >= len(user_pages)
@@ -192,25 +214,40 @@ class ReplyCache:
 
 
 def wrap_pages(text, cols=12, lines=6):
-    """Conservative 16px cells inside a 200px label; whole Unicode characters.
+    return wrap_page_layout(text, cols, lines)[0]
 
-    Explicit line breaks, including blank paragraphs, count as lines. Pages
-    do not overlap. Spaces at a soft wrap are omitted, never actual words.
+
+def wrap_page_layout(text, cols=12, lines=6):
+    """Display pages and their original scalar starts, using the same wrapping.
+
+    CR is omitted and tab becomes a space. Explicit/blank lines count, soft
+    wrap spaces are omitted, and source offsets remain in the original text.
     """
     if not text:
-        return []
-    wrapped = []
-    for paragraph in text.replace("\r", "").replace("\t", " ").split("\n"):
-        if not paragraph:
-            wrapped.append("")
+        return [], []
+    paragraphs = [[]]
+    positions = [0]
+    for at, cp in enumerate(text):
+        if cp == "\r":
             continue
+        if cp == "\n":
+            paragraphs.append([])
+            positions.append(at + 1)
+        else:
+            paragraphs[-1].append((" " if cp == "\t" else cp, at))
+    wrapped, starts = [], []
+    for paragraph, position in zip(paragraphs, positions):
         while len(paragraph) > cols:
-            end = paragraph.rfind(" ", 0, cols + 1)
+            end = max((i for i, (cp, _) in enumerate(paragraph[:cols + 1]) if cp == " "), default=0)
             if end <= 0:
                 end = cols
-            wrapped.append(paragraph[:end])
+            wrapped.append("".join(cp for cp, _ in paragraph[:end]))
+            starts.append(paragraph[0][1])
+            position = paragraph[end - 1][1] + 1
             paragraph = paragraph[end:]
-            if paragraph.startswith(" "):
+            if paragraph and paragraph[0][0] == " ":
                 paragraph = paragraph[1:]
-        wrapped.append(paragraph)
-    return ["\n".join(wrapped[i:i + lines]) for i in range(0, len(wrapped), lines)]
+        wrapped.append("".join(cp for cp, _ in paragraph))
+        starts.append(paragraph[0][1] if paragraph else position)
+    return (["\n".join(wrapped[i:i + lines]) for i in range(0, len(wrapped), lines)],
+            [starts[i] for i in range(0, len(starts), lines)])

@@ -930,6 +930,13 @@ static void on_sync(void) {
         return;
     }
     s_synced = true;
+#if CONFIG_MUSE_PHONE_BRIDGE
+    /* Upgrades retain bonds while the bridge RX declaration gains Write
+     * Without Response for reply audio. Invalidate bonded clients' cached
+     * properties before advertising; stale iOS caches discard those writes.
+     * NimBLE also marks disconnected subscribed peers for their next link. */
+    ble_svc_gatt_changed(0x0001, 0xffff);
+#endif
     start_advertising();
 }
 

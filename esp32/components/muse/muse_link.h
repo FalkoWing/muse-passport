@@ -72,6 +72,7 @@ typedef struct {
     int (*wifi_saved)(muse_wifi_saved_t *out, int max);   /* most recently joined first */
     void (*wifi_forget)(const char *ssid);        /* one saved network; empty forgets them all */
     bool (*speech_ready)(void);
+    bool (*speech_follow_ready)(void);
     bool (*speech_send)(uint8_t type, const void *data, size_t len);
 } muse_link_ops_t;
 
@@ -99,4 +100,5 @@ bool muse_link_req_send(int64_t id, const void *data, size_t len, bool end_body,
 void muse_link_req_cancel(int64_t id);
 void muse_link_ble_apply(void);
 bool muse_link_speech_ready(void);
+bool muse_link_speech_follow_ready(void);
 bool muse_link_speech_send(uint8_t type, const void *data, size_t len);

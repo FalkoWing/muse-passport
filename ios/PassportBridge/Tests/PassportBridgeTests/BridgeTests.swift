@@ -109,6 +109,25 @@ private func audioBlock(_ sequence: UInt8, end: Bool) -> Data {
         #expect(await commands.next(within: .milliseconds(50)) == nil)
         await legacy.bridge.stop()
     }
+    @Test func sourceFollowingRequiresBothCapabilityAndRequest() async throws {
+        let commands = Mailbox<SpeechCommand>()
+        let rig = Rig(speech: { await commands.put($0) })
+        await rig.send(BridgeMessageType.credentials, json: Rig.credentials.merging([
+            "reply_speech": "opus-16000-60-v1", "speech_follow": "source-v1"
+        ]) { $1 })
+        let ready = try #require(await rig.device.next())
+        #expect(try object(ready.body)["speech_follow"] as? String == "source-v1")
+        let state = try await rig.waitForState { $0.museConnected }
+        #expect(state.speechFollowSupported)
+        let request: [String: Any] = ["session": 1, "limit": 8, "note": "missing", "message": "r"]
+        await rig.send(BridgeMessageType.speechRequest, json: request)
+        guard case .request = try #require(await commands.next()) else { Issue.record("legacy request changed"); return }
+        await rig.send(BridgeMessageType.speechRequest, json: request.merging(["speech_follow": "source-v1"]) { $1 })
+        guard case let .followRequest(session, text, limit) = try #require(await commands.next()) else { Issue.record("missing source request"); return }
+        #expect(session == 1 && text.isEmpty && limit == 8)
+        await rig.bridge.stop()
+    }
+
     @Test func credentialsMakeTheDeviceReadyAndConnectMuse() async throws {
         let rig = Rig()
         let vm = try await rig.connect()

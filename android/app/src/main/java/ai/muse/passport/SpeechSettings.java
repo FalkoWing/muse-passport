@@ -13,8 +13,15 @@ final class SpeechSettings {
     SpeechSettings(Context context) {
         prefs=context.getSharedPreferences("speech",Context.MODE_PRIVATE);
         cloud=prefs.getBoolean("cloud",false);legacy=prefs.getBoolean("legacy",false);
-        appId=prefs.getString("appId","");resource=prefs.getString("resource","seed-tts-2.0");voice=prefs.getString("voice","");
+        appId=prefs.getString("appId","");resource=prefs.getString("resource",CloudSpeechCatalog.DEFAULT_MODEL);voice=prefs.getString("voice","");
+        String initial=CloudSpeechCatalog.initialVoice(resource,voice,!prefs.getBoolean("cartoonDefault",false));
+        if(!initial.equals(voice) || !prefs.getBoolean("cartoonDefault",false))
+            prefs.edit().putString("voice",initial).putBoolean("cartoonDefault",true).apply();
+        voice=initial;
     }
+    boolean configured(){return hasSecret() && !resource.isBlank() && !voice.isBlank() && (!legacy || !appId.isBlank());}
+    boolean useCloud(){return cloud && configured();}
+    String sourceDescription(){return useCloud()?"云端 TTS · 火山／豆包":cloud?"本机 TTS（云端配置未完成）":"本机 TTS";}
     private SecretKey key() throws Exception {
         KeyStore store=KeyStore.getInstance("AndroidKeyStore");store.load(null);
         if(store.containsAlias(ALIAS))return (SecretKey)store.getKey(ALIAS,null);
@@ -31,6 +38,8 @@ final class SpeechSettings {
     }
     boolean hasSecret(){return !prefs.getString("secret","").isEmpty();}
     void save(String secret) throws Exception {
+        if(legacy!=prefs.getBoolean("legacy",false) && hasSecret() && secret.isEmpty())
+            throw new IllegalArgumentException("切换鉴权方式时，请填写对应密钥");
         SharedPreferences.Editor edit=prefs.edit().putBoolean("cloud",cloud).putBoolean("legacy",legacy)
                 .putString("appId",appId.trim()).putString("resource",resource.trim()).putString("voice",voice.trim());
         if(!secret.isEmpty()) {
