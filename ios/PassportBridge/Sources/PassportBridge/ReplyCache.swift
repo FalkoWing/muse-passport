@@ -31,6 +31,7 @@ public struct ReplyCache: Sendable {
     private var mark = 0
     private var noteID = ""
     private var noteIDs: Set<String> = []
+    private var agentBusy = false
 
     public init() {}
 
@@ -40,6 +41,7 @@ public struct ReplyCache: Sendable {
         noteID = ""
         rows.removeAll()
         noteIDs.removeAll()
+        agentBusy = false
     }
 
     /// A new subscription starts on a line boundary: whatever the previous one
@@ -100,6 +102,11 @@ public struct ReplyCache: Sendable {
             guard item["type"] as? String == "event" else { continue }
             let payload = item["payload"] as? [String: Any] ?? [:]
             func text(_ source: [String: Any], _ key: String) -> String { source[key] as? String ?? "" }
+            if ["agent.status", "task.status"].contains(text(item, "event")) {
+                if let code = payload["activity_code"] as? String { agentBusy = !code.isEmpty && !["online", "idle"].contains(code) }
+                else if let status = payload["status"] as? String { agentBusy = !status.isEmpty && !["completed", "failed"].contains(status) }
+                continue
+            }
             let identifier = [text(payload, "message_id"), text(item, "message_id"), text(payload, "id")]
                 .first { !$0.isEmpty } ?? ""
             guard !identifier.isEmpty else { continue }
@@ -137,6 +144,13 @@ public struct ReplyCache: Sendable {
         return related
     }
 
+    public func speechText(note: String, message: String) -> String? {
+        guard note == noteID, !note.isEmpty, related.contains(message),
+              let row = rows.first(where: { $0.messageID == message }),
+              row.event == "message.assistant", row.ready else { return nil }
+        return row.readerText
+    }
+
     /// The local `/chat/history` endpoint: at most one event after `after_seq`.
     public func page(_ path: String) throws -> Data {
         let query = Self.query(path)
@@ -163,7 +177,7 @@ public struct ReplyCache: Sendable {
             // arrive before the upload ACK and the firmware's first poll.
             events = [["seq": mark, "event_name": "marker"]]
         }
-        return Self.json(["ok": true, "result": ["chat_events": events]])
+        return Self.json(["ok": true, "result": ["chat_events": events, "agent_busy": agentBusy]])
     }
 
     /// The local `/passport/reader` endpoint. Never forwarded to the Muse VM.
@@ -176,10 +190,11 @@ public struct ReplyCache: Sendable {
             return parsed
         }
         let columns = max(1, min(12, try number("cols", default: 12)))
-        let lines = max(1, min(6, try number("lines", default: 6)))
+        let lines = max(1, min(7, try number("lines", default: 6)))
         let related = related
         var users: [String] = []
         var replies: [String] = []
+        var replyStarts: [String: Int] = [:], replyLength = 0
         var truncated = false
         var ready = true
         for row in rows {
@@ -196,6 +211,8 @@ public struct ReplyCache: Sendable {
                 // Stable completed messages: their page boundaries cannot move
                 // under the reader as more streaming tokens arrive.
                 if row.ready, !row.readerText.isEmpty {
+                    replyStarts[row.messageID] = replyLength + (replies.isEmpty ? 0 : 2)
+                    replyLength = replyStarts[row.messageID]! + row.readerText.unicodeScalars.count
                     replies.append(row.readerText)
                     truncated = truncated || row.truncated
                 }
@@ -204,10 +221,16 @@ public struct ReplyCache: Sendable {
         let userPages = wrapPages(users.first ?? "", columns: columns, lines: lines)
         let merged = Self.truncated(replies.joined(separator: "\n\n"), to: Self.textLimit)
         truncated = truncated || merged.truncated
-        let replyPages = wrapPages(merged.text, columns: columns, lines: lines)
+        let layout = wrapPageLayout(merged.text, columns: columns, lines: lines)
+        let replyPages = layout.pages
         let pages = userPages + replyPages
         var selected = try number("page", default: -1)
-        if selected < 0 { selected = replyPages.isEmpty ? 0 : userPages.count }
+        if let message = query["message"]?.first, query["offset"] != nil {
+            let offset = try number("offset", default: -1)
+            guard let start = replyStarts[message], let row = rows.first(where: { $0.messageID == message }),
+                  offset >= 0, offset < row.readerText.unicodeScalars.count else { return Data(#"{"ok":false}"#.utf8) }
+            selected = userPages.count + (layout.starts.lastIndex(where: { $0 <= start + offset }) ?? 0)
+        } else if selected < 0 { selected = replyPages.isEmpty ? 0 : userPages.count }
         selected = max(0, min(pages.count - 1, selected))
         let isReply = selected >= userPages.count
         return Self.json([
@@ -257,23 +280,35 @@ public struct ReplyCache: Sendable {
 /// Explicit line breaks, including blank paragraphs, count as lines. Pages
 /// do not overlap. Spaces at a soft wrap are omitted, never actual words.
 public func wrapPages(_ text: String, columns: Int = 12, lines: Int = 6) -> [String] {
-    guard !text.isEmpty else { return [] }
-    // Count code points, as the device does, not grapheme clusters.
-    let space: Unicode.Scalar = " "
-    let scalars = text.unicodeScalars.filter { $0 != "\r" }.map { $0 == "\t" ? space : $0 }
-    var wrapped: [String] = []
-    for paragraph in scalars.split(separator: "\n", omittingEmptySubsequences: false) {
-        var rest = paragraph
+    wrapPageLayout(text, columns: columns, lines: lines).pages
+}
+
+private func wrapPageLayout(_ text: String, columns: Int, lines: Int) -> (pages: [String], starts: [Int]) {
+    guard !text.isEmpty else { return ([], []) }
+    var paragraphs: [[(Unicode.Scalar, Int)]] = [[]], positions = [0]
+    for (offset, scalar) in text.unicodeScalars.enumerated() {
+        if scalar == "\r" { continue }
+        if scalar == "\n" { paragraphs.append([]); positions.append(offset + 1) }
+        else { paragraphs[paragraphs.count - 1].append((scalar == "\t" ? " " : scalar, offset)) }
+    }
+    var wrapped: [String] = [], starts: [Int] = []
+    func string(_ points: ArraySlice<(Unicode.Scalar, Int)>) -> String {
+        String(String.UnicodeScalarView(points.map { $0.0 }))
+    }
+    for (index, paragraph) in paragraphs.enumerated() {
+        var rest = paragraph[...]
+        var position = positions[index]
         while rest.count > columns {
-            var end = rest.prefix(columns + 1).lastIndex(of: space).map { $0 - rest.startIndex } ?? 0
+            var end = rest.prefix(columns + 1).lastIndex(where: { $0.0 == " " }).map { $0 - rest.startIndex } ?? 0
             if end <= 0 { end = columns }
-            wrapped.append(String(String.UnicodeScalarView(rest.prefix(end))))
+            wrapped.append(string(rest.prefix(end))); starts.append(rest.first!.1)
+            position = rest.prefix(end).last!.1 + 1
             rest = rest.dropFirst(end)
-            if rest.first == space { rest = rest.dropFirst() }
+            if rest.first?.0 == " " { rest = rest.dropFirst() }
         }
-        wrapped.append(String(String.UnicodeScalarView(rest)))
+        wrapped.append(string(rest)); starts.append(rest.first?.1 ?? position)
     }
-    return stride(from: 0, to: wrapped.count, by: lines).map {
+    return (stride(from: 0, to: wrapped.count, by: lines).map {
         wrapped[$0..<min($0 + lines, wrapped.count)].joined(separator: "\n")
-    }
+    }, stride(from: 0, to: starts.count, by: lines).map { starts[$0] })
 }

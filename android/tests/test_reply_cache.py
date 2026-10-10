@@ -100,3 +100,15 @@ class RealMuseAssociationTest(unittest.TestCase):
         c.feed(event('delta.message_done',message_id='other',reply_to_message_id='other',display_text='其他对话'))
         self.assertEqual(c.rows['other']['reply_to_message_id'],'someone-else')
         self.assertFalse(json.loads(c.page('/chat/history?after_seq=1'))['result']['chat_events'])
+
+class AgentBusyTest(unittest.TestCase):
+    def test_explicit_idless_status_and_new_turn_reset(self):
+        cache=ReplyCache();cache.begin();cache.note('note')
+        def busy(): return json.loads(cache.page('/chat/history'))['result']['agent_busy']
+        self.assertFalse(busy())
+        cache.feed(event('agent.status',activity_code='working'));self.assertTrue(busy())
+        cache.feed(event('agent.status'));self.assertTrue(busy())
+        cache.feed(event('agent.status',activity_code='idle'));self.assertFalse(busy())
+        cache.feed(event('task.status',status='running'));self.assertTrue(busy())
+        cache.feed(event('task.status',status='failed'));self.assertFalse(busy())
+        cache.feed(event('task.status',status='running'));cache.begin();self.assertFalse(busy())

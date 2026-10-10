@@ -1,4 +1,5 @@
 .gradle/
+.cxx/
 local.properties
 *.jks
 *.keystore

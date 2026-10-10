@@ -22,6 +22,9 @@ static const char *TAG = "passport_reader";
 static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED;
 static struct {
     char note[80];
+    char message[80];
+    uint32_t offset;
+    bool following;
     uint32_t generation, revision;
     int desired;
     int64_t refresh_until;
@@ -99,13 +102,20 @@ static void reader_task(void *arg)
     (void)arg;
     int64_t stream = 0, next = 0, deadline = 0;
     uint32_t generation = 0, revision = 0;
-    char body[BODY_MAX];
+    uint32_t queried_offset = UINT32_MAX;
+    /* Only this task uses the snapshot; keep BLE/logging room in its 4 KiB stack. */
+    static char body[BODY_MAX];
+    unsigned stack_free = UINT32_MAX;
     for (;;) {
         char note[80];
+        char message[80];
+        uint32_t offset;
         int desired;
         uint32_t gen, rev;
         portENTER_CRITICAL(&s_lock);
         strlcpy(note, s_reader.note, sizeof(note));
+        strlcpy(message, s_reader.following ? s_reader.message : "", sizeof(message));
+        offset = s_reader.offset;
         desired = s_reader.desired;
         gen = s_reader.generation;
         rev = s_reader.revision;
@@ -115,7 +125,7 @@ static void reader_task(void *arg)
         if (done) memcpy(body, s_rx.body, s_rx.len + 1);
         portEXIT_CRITICAL(&s_lock);
         int64_t now = esp_timer_get_time();
-        if (stream && (gen != generation || !note[0] || done || now >= deadline)) {
+        if (stream && (gen != generation || rev != revision || !note[0] || done || now >= deadline)) {
             /* Stop callbacks before parsing/freeing the response. */
             portENTER_CRITICAL(&s_lock);
             s_rx.pending = false;
@@ -133,14 +143,21 @@ static void reader_task(void *arg)
             next = gen != generation || rev != revision ? 0 : now + POLL_US;
         }
         if (!stream && note[0] && !muse_state_asleep() && muse_link_req_ready()
-            && ((now >= next && now < refresh_until) || gen != generation || rev != revision)) {
-            char encoded[240], path[340];
+            && ((now >= next && now < refresh_until) || gen != generation || rev != revision
+                || (message[0] && offset != UINT32_MAX && offset != queried_offset))) {
+            char encoded[240], path[640], encoded_message[240];
             int cols, lines;
             muse_state_page(&cols, &lines);
             encode_note(note, encoded);
             snprintf(path, sizeof(path), "/passport/reader?note=%s&page=%d&cols=%d&lines=%d", encoded, desired, cols, lines);
+            if (message[0] && offset != UINT32_MAX) {
+                encode_note(message, encoded_message);
+                size_t n = strlen(path);
+                snprintf(path + n, sizeof(path) - n, "&message=%s&offset=%lu", encoded_message, (unsigned long)offset);
+            }
             generation = gen;
             revision = rev;
+            queried_offset = offset;
             portENTER_CRITICAL(&s_lock);
             uint32_t nonce = ++s_rx.nonce;
             s_rx.len = 0;
@@ -158,6 +175,13 @@ static void reader_task(void *arg)
                 next = now + POLL_US;
             }
         }
+        if (note[0]) {
+            unsigned remaining = (unsigned)uxTaskGetStackHighWaterMark(NULL);
+            if (remaining < stack_free) {
+                stack_free = remaining;
+                ESP_LOGI(TAG, "stack free=%u", remaining);
+            }
+        }
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
@@ -165,7 +189,7 @@ static void reader_task(void *arg)
 void muse_passport_reader_start(void)
 {
     if (s_reader.running) return;
-    /* Body + path + parsed page fit in this dedicated stack. */
+    /* The response snapshot is task-owned static storage. */
     s_reader.running = xTaskCreate(reader_task, "passport_reader", 4096, NULL, 2, NULL) == pdPASS;
     if (!s_reader.running) ESP_LOGE(TAG, "reader task allocation failed");
 }
@@ -176,6 +200,9 @@ void muse_passport_reader_reset(void)
     s_reader.generation++;
     s_reader.revision++;
     s_reader.note[0] = '\0';
+    s_reader.message[0] = '\0';
+    s_reader.offset = UINT32_MAX;
+    s_reader.following = true;
     memset(&s_reader.page, 0, sizeof(s_reader.page));
     s_reader.desired = -1; /* first transcript page; then first reply page */
     portEXIT_CRITICAL(&s_lock);
@@ -193,12 +220,64 @@ void muse_passport_reader_note(const char *identifier)
 void muse_passport_reader_step(int direction)
 {
     portENTER_CRITICAL(&s_lock);
+    s_reader.following = false;
+    s_reader.revision++;
     if (s_reader.page.pages) {
         int at = s_reader.desired < 0 ? s_reader.page.page : s_reader.desired;
         at += direction;
         s_reader.desired = at < 0 ? 0 : at >= s_reader.page.pages ? s_reader.page.pages - 1 : at;
-        s_reader.revision++;
     }
+    portEXIT_CRITICAL(&s_lock);
+    muse_state_poke();
+}
+
+uint32_t muse_passport_reader_speech_begin(const char *note, const char *message)
+{
+    portENTER_CRITICAL(&s_lock);
+    uint32_t generation = s_reader.generation;
+    if (!strcmp(note, s_reader.note)) {
+        strlcpy(s_reader.message, message, sizeof(s_reader.message));
+        s_reader.offset = UINT32_MAX;
+        s_reader.following = true;
+        s_reader.desired = -1;
+        s_reader.revision++;
+        s_reader.refresh_until = esp_timer_get_time() + REFRESH_US;
+    }
+    portEXIT_CRITICAL(&s_lock);
+    return generation;
+}
+
+void muse_passport_reader_speech_position(uint32_t generation, uint32_t offset)
+{
+    portENTER_CRITICAL(&s_lock);
+    if (generation == s_reader.generation && s_reader.message[0]
+        && offset != UINT32_MAX && s_reader.offset != offset) {
+        s_reader.offset = offset;
+        if (s_reader.following) {
+            s_reader.desired = -1;
+        }
+        /* Finish the current query, then fetch the latest position. Cancelling
+         * on every short sentence could prevent any response from arriving. */
+        s_reader.refresh_until = esp_timer_get_time() + REFRESH_US;
+    }
+    portEXIT_CRITICAL(&s_lock);
+}
+
+bool muse_passport_reader_following(void)
+{
+    portENTER_CRITICAL(&s_lock);
+    bool following = s_reader.following;
+    portEXIT_CRITICAL(&s_lock);
+    return following;
+}
+
+void muse_passport_reader_resume(void)
+{
+    portENTER_CRITICAL(&s_lock);
+    s_reader.following = true;
+    s_reader.desired = -1;
+    s_reader.revision++;
+    s_reader.refresh_until = esp_timer_get_time() + REFRESH_US;
     portEXIT_CRITICAL(&s_lock);
     muse_state_poke();
 }

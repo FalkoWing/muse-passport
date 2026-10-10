@@ -43,12 +43,13 @@ if(CONFIG_MUSE_ENABLED)
         "muse_link.c"
         "muse_ble.c")
     if(CONFIG_MUSE_BOARD_FOLOTOY_PASSPORT)
-        list(APPEND srcs "muse_ui_passport.c" "fonts/passport_font_16.c")
+        list(APPEND srcs "muse_ui_passport.c" "passport_avatar.c" "fonts/passport_font_16.c")
+        list(APPEND embed "passport_avatar.rgb565")
     else()
         list(APPEND srcs "muse_ui.c")
     endif()
     if(CONFIG_MUSE_PHONE_BRIDGE)
-        list(APPEND srcs "muse_passport_reader.c")
+        list(APPEND srcs "muse_passport_reader.c" "muse_speech.c" "muse_speech_buffer.c")
     endif()
     if(CONFIG_MUSE_HATCH)
         list(APPEND srcs "muse_chat.c" "muse_account_api.c" "muse_chat_session.cpp")
@@ -99,7 +100,7 @@ set(muse_priv_requires
     noise_core minimp3
     esp_lcd esp_adc esp_driver_i2s esp_driver_ledc esp_driver_spi esp_driver_uart esp_wifi
     esp_driver_pcnt)
-list(APPEND muse_priv_requires camera passport_bsp)
+list(APPEND muse_priv_requires camera passport_bsp passport_opus)
 
 idf_component_register(
     SRCS ${srcs}

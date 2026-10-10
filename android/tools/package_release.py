@@ -11,11 +11,11 @@ import sys
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
-VERSION = '1.0.4'
+VERSION = '1.0.5'
 # Version of the Android app in this package. When it is not VERSION the app is
 # unchanged, so that release's published APK is packaged again, not a rebuild:
 #   gh release download v1.0.2 -p '*.apk' -D android/artifacts
-APK_VERSION = '1.0.2'
+APK_VERSION = VERSION
 APK_SHA256 = 'd987c79c743027fbd58e87247aba7a43621759968e9f8f6731c9accd1520ed5d'
 BUILD = ROOT / 'esp32/build-muse-folotoy-passport-release'
 OUT = ROOT / f'android/artifacts/muse-passport-{VERSION}'
@@ -83,6 +83,7 @@ def main():
         shutil.copy2(ROOT / notice, OUT / notice)
     third = OUT / 'THIRD_PARTY'
     third.mkdir()
+    shutil.copy2(ROOT / 'shared/UNICODE-LICENSE.txt', third / 'UNICODE-LICENSE.txt')
     for notice in (ROOT / 'android/notices').glob('*'):
         if notice.is_file():
             shutil.copy2(notice,third / notice.name)

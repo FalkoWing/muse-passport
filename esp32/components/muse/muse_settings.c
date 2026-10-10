@@ -115,7 +115,13 @@ esp_err_t muse_settings_init(void)
 
     uint8_t b;
     load_u8("volume", &s.volume);
-    if (nvs_get_u8(s_nvs, "speaker", &b) == ESP_OK) {
+    if (nvs_get_u8(s_nvs,
+#if CONFIG_MUSE_PHONE_BRIDGE
+                  "reply_speech",
+#else
+                  "speaker",
+#endif
+                  &b) == ESP_OK) {
         s.speaker_on = b;
     }
     load_u8("mic_gain", &s.mic_gain);
@@ -201,7 +207,13 @@ void muse_settings_set_volume(int pct)
 void muse_settings_set_speaker_on(bool on)
 {
     s.speaker_on = on;
-    save_u8("speaker", on);
+    save_u8(
+#if CONFIG_MUSE_PHONE_BRIDGE
+            "reply_speech",
+#else
+            "speaker",
+#endif
+            on);
     notify(MUSE_SETTING_SPEAKER);
 }
 

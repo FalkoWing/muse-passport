@@ -128,7 +128,9 @@ class Subscription:
             data, end = frame.value.body, frame.value.end_body
             if not self.ready:
                 self.ready = True
-                self.session.bridge.responses.put_nowait((READY, 0, b""))
+                capability = (bytes(self.session.bridge.callbacks.speechReady())
+                              if hasattr(self.session.bridge.callbacks, "speechReady") else b"")
+                self.session.bridge.responses.put_nowait((READY, 0, capability))
                 self.session.bridge.status("Muse 已连接，可以按住 Passport 的 OK 键说话")
         else:
             data, end = frame.value.data, frame.value.end_body
@@ -249,8 +251,9 @@ class PhoneSession(LinkSession):
 
 
 class Bridge:
-    def __init__(self, callbacks, network):
+    def __init__(self, callbacks, network, connection_epoch=0):
         self.callbacks, self.network = callbacks, network
+        self.connection_epoch = int(connection_epoch)
         self.loop = asyncio.new_event_loop()
         self.commands = asyncio.Queue(maxsize=32)
         self.responses = asyncio.Queue(maxsize=32)
@@ -400,6 +403,12 @@ class Bridge:
                         self.token_committed.set_result(None)
                     else:
                         self.token_committed.set_exception(MuseConnectionError("Passport 无法保存更新后的凭据"))
+            elif kind == 13:
+                request = json.loads(data)
+                cache = self.session.cache if self.session else None
+                text = cache.speech_text(request.get("note", ""), request.get("message", "")) if cache else None
+                if hasattr(self.callbacks, "replySpeech"):
+                    self.callbacks.replySpeech(int(request["session"]), text or "", int(request["limit"]), self.connection_epoch, request.get("speech_follow") == "source-v1")
             elif kind in (OPEN, DATA, CANCEL):
                 try:
                     if self.session is None:

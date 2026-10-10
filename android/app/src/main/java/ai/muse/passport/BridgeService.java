@@ -33,14 +33,17 @@ public final class BridgeService extends Service {
     private BluetoothLeScanner scanner;
     private PyObject backend;
     private Network network;
+    private SpeechEngine speech;
+    private volatile boolean speechSupported, speechFollowSupported;
     private final BridgeProtocol protocol=new BridgeProtocol();
     private final ArrayDeque<Write> writes=new ArrayDeque<>();
     private boolean busy, scanning, stopping, subscribed;
     private int mtu=23, sequence=1, failures;
-    private long epoch;
-    private record Write(byte[] packet, CountDownLatch complete, java.util.concurrent.atomic.AtomicBoolean ok) {}
+    private volatile long epoch;
+    private record Write(byte[] packet, CountDownLatch complete, java.util.concurrent.atomic.AtomicBoolean ok, boolean audio) {}
     @Override public void onCreate() {
         super.onCreate();
+        speech=SpeechEngine.get(this);
         thread=new HandlerThread("PassportBLE"); thread.start(); handler=new Handler(thread.getLooper());
         adapter=((BluetoothManager)getSystemService(BLUETOOTH_SERVICE)).getAdapter();
         registerBondReceiver();
@@ -142,7 +145,7 @@ public final class BridgeService extends Service {
             long generation=epoch;
             python.execute(() -> {
                 try {
-                    PyObject b=Python.getInstance().getModule("passport_bridge").callAttr("Bridge",BridgeService.this,newNetwork);
+                    PyObject b=Python.getInstance().getModule("passport_bridge").callAttr("Bridge",BridgeService.this,newNetwork,generation);
                     handler.post(() -> {
                         if (generation!=epoch || stopping) { python.execute(() -> b.callAttr("stop")); newNetwork.close(); return; }
                         backend=b; enqueue(BridgeProtocol.HELLO,0,new byte[0],null,null);
@@ -171,6 +174,8 @@ public final class BridgeService extends Service {
                 JSONObject info=new JSONObject(new String(m.body(),StandardCharsets.UTF_8));
                 sdkTokenConfigured=info.optBoolean("sdk_token_configured",false);
                 sdkSettingsSupported=info.optBoolean("sdk_settings",false);
+                speechSupported="opus-16000-60-v1".equals(info.optString("reply_speech")) && mtu>=140;
+                speechFollowSupported=speechSupported && "source-v1".equals(info.optString("speech_follow")) && mtu>=144;
                 if (!sdkSettingsPending) sdkSettingsStatus=sdkSettingsSupported
                         ? (sdkTokenConfigured?"SDK token 已设置":"尚未设置 SDK token")
                         : "请升级 Passport 固件以设置 SDK token";
@@ -187,6 +192,7 @@ public final class BridgeService extends Service {
                 }
                 return;
             }
+            if (m.type()==BridgeProtocol.SPEECH_STATUS) { speech.feedback(m.body()); return; }
             PyObject b=backend;
             if (b!=null) python.execute(() -> b.callAttr("feed",m.type(),m.id(),m.body()));
         } catch (Exception e) { retry("蓝牙数据顺序错误，请重连"); }
@@ -245,25 +251,44 @@ public final class BridgeService extends Service {
             if (complete!=null) { ok.set(false); complete.countDown(); } return;
         }
         List<byte[]> packets=BridgeProtocol.packets(type,id,sequence++ & 65535,body,mtu);
-        for (int i=0;i<packets.size();i++) writes.addLast(new Write(packets.get(i),i==packets.size()-1?complete:null,ok));
+        if (type==BridgeProtocol.SPEECH_DATA && packets.size()!=1) {
+            if(complete!=null){ok.set(false);complete.countDown();}return;
+        }
+        for (int i=0;i<packets.size();i++) writes.addLast(new Write(packets.get(i),i==packets.size()-1?complete:null,ok,type==BridgeProtocol.SPEECH_DATA));
         pump();
     }
     private void pump() {
         if (busy || writes.isEmpty() || gatt==null) return;
-        busy=true; byte[] data=writes.peekFirst().packet;
+        busy=true; Write write=writes.peekFirst(); byte[] data=write.packet;
+        int mode=write.audio?BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE:BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT;
         boolean accepted;
-        if (Build.VERSION.SDK_INT>=33) accepted=gatt.writeCharacteristic(rx,data,BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)==BluetoothStatusCodes.SUCCESS;
-        else { rx.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT); rx.setValue(data); accepted=gatt.writeCharacteristic(rx); }
+        if (Build.VERSION.SDK_INT>=33) accepted=gatt.writeCharacteristic(rx,data,mode)==BluetoothStatusCodes.SUCCESS;
+        else { rx.setWriteType(mode); rx.setValue(data); accepted=gatt.writeCharacteristic(rx); }
         if (!accepted) { busy=false; retry("蓝牙发送繁忙，正在重连…"); }
     }
     public boolean sendMessage(int type,int id,byte[] body) {
+        return sendMessage(type,id,body,epoch);
+    }
+    private boolean sendMessage(int type,int id,byte[] body,long connection) {
         CountDownLatch done=new CountDownLatch(1);
         java.util.concurrent.atomic.AtomicBoolean ok=new java.util.concurrent.atomic.AtomicBoolean(true);
-        handler.post(() -> enqueue(type,id,body,done,ok));
+        handler.post(() -> {
+            if(connection!=epoch){ok.set(false);done.countDown();return;}
+            enqueue(type,id,body,done,ok);
+        });
         try { return done.await(30,TimeUnit.SECONDS) && ok.get(); }
         catch (InterruptedException e) { Thread.currentThread().interrupt(); return false; }
     }
+    public byte[] speechReady() {
+        return (speechSupported?(speechFollowSupported?"{\"reply_speech\":\"opus-16000-60-v1\",\"speech_follow\":\"source-v1\"}":"{\"reply_speech\":\"opus-16000-60-v1\"}"):"").getBytes(StandardCharsets.UTF_8);
+    }
+    public void replySpeech(long session,String text,long limit,long connection) {replySpeech(session,text,limit,connection,false);}
+    public void replySpeech(long session,String text,long limit,long connection,boolean follow) {
+        if(!speechSupported || connection!=epoch)return;
+        speech.request(session,text,limit,body->sendMessage(BridgeProtocol.SPEECH_DATA,0,body,connection),follow && speechFollowSupported);
+    }
     private void clearConnection() {
+        speechSupported=false; speechFollowSupported=false; speech.stop();
         epoch++; stopScan(); subscribed=false; rx=null; protocol.reset();
         sdkSettingsSupported=false;
         if (sdkSettingsPending) sdkSettingsStatus="连接已中断，请重连后检查设置状态";

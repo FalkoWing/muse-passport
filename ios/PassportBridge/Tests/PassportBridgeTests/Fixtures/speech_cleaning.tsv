@@ -1,0 +1,40 @@
+# Shared manually reviewed speech-cleaning cases. Columns: name, input, expected. Escapes: \\, \n, \r, \t.
+inline_identifier	用 `__init__()` 初始化	用 __init__() 初始化
+inline_arithmetic	计算 `a*b*c` 和 `x__y__z`	计算 a*b*c 和 x__y__z
+double_code	用 ``a`b*c`` 计算	用 a`b*c 计算
+plain_operators	a*b*c，2 * 3 * 4，x__y__z，5% + $10 = 15	a*b*c，2 * 3 * 4，x__y__z，5% + $10 = 15
+tilde_fence	开始\n~~~python\nprint(1)\n~~~\n结束	开始\n\n结束
+long_fence	开始\n````python\n```\n不朗读\n````\n结束	开始\n\n结束
+indented_fence	甲\n  ~~~~\n代码\n  ~~~~~\n乙	甲\n\n乙
+unclosed_fence	开始\n```python\n__init__()\n**保留**	开始\n```python\n__init__()\n**保留**
+wrong_fence	~~~\na*b*c\n```	~~~\na*b*c\n```
+unclosed_inline	前面 `__init__() 和 **内容**	前面 `__init__() 和 **内容**
+nested_url	见[文档](https://example.com/a_(b))详情	见文档详情
+nested_label	[文档[补充]](https://x/a_(b_(c)))	文档[补充]
+formatted_label	[**重要**说明](https://x)继续	重要说明继续
+image_parentheses	![说明](https://x/a_(b).png)正文	正文
+unclosed_link	[__init__()](https://x/a_(b)	[__init__()](https://x/a_(b)
+escaped_markup	保留 \\*正文\\* 和 \\`code\\`	保留 \\*正文\\* 和 \\`code\\`
+url_preserved	https://x/a__b__c?q=a*b*c	https://x/a__b__c?q=a*b*c
+clock	⏰时间到了⌚	时间到了
+joined_emoji	👨‍👩‍👧‍👦👍🏽🏳️‍🌈🇨🇳完成	完成
+tag_flag	🏴󠁧󠁢󠁥󠁮󠁧󠁿完成	完成
+keycap_number	1️⃣第一，2⃣第二，#️⃣*️⃣	1第一，2第二，
+symbols	©版权 ™商标 ↔方向 ∑求和 ➕加号	©版权 ™商标 ↔方向 ∑求和 ➕加号
+emoji_variant	©️™️☀️装饰	装饰
+nonemoji_joiner	क्‍ष文字	क्‍ष文字
+code_literal	`😀 * #️⃣ __init__()`	😀 * #️⃣ __init__()
+empty_fence	```\na*b*c\n```	
+empty_image	![说明](https://x/a_(b).png)	
+empty_emoji	⏰👨‍👩‍👧‍👦👍🏽🇨🇳	
+malformed_format	**未闭合，a*b*c；x__y__z	**未闭合，a*b*c；x__y__z
+basic_bold	**加粗**和*斜体* __粗体__	加粗和斜体 粗体
+crlf_fence	甲\r\n~~~\r\n代码\r\n~~~\r\n乙	甲\r\n\n乙
+keycap_stars	*️⃣装饰*️⃣	装饰
+blank_inside_fence	甲\n~~~\n\n不读\n~~~\n乙	甲\n\n乙
+mismatched_emphasis	**保留*，__保留_，* 空格 *	**保留*，__保留_，* 空格 *
+ordinary_brackets	正文[说明]和__init__()	正文[说明]和__init__()
+digit_variation	1️仍是数字	1️仍是数字
+text_emoji_modifiers	☝🏽⛹🏾✌🏿✍🏻🏋🏼🏌🏽🕴🏾🕵🏿🖐🏻完成	完成
+multiline_code_conservative	# 标题\n`代码\n__init__() 和 a*b*c\n`	标题\n`代码\n__init__() 和 a*b*c\n`
+open_code_tail	`__init__()\n**继续保留**	`__init__()\n**继续保留**

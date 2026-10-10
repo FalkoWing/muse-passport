@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.22.1)
+project(passport_speech C)
+add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../../../../../shared/opus" "${CMAKE_BINARY_DIR}/opus")
+add_library(passport_speech SHARED opus_jni.c)
+target_link_libraries(passport_speech passport_opus)

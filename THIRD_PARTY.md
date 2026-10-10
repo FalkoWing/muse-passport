@@ -6,7 +6,9 @@ Muse Passport 基于 Muse Gadget SDK，保留原作者的版权、许可证与�
 |---|---|---|
 | 官方 SDK 基础：`esp32/`、`linux/`、上游工具和测试 | [facebookincubator/muse-gadget-sdk](https://github.com/facebookincubator/muse-gadget-sdk)，本地基础提交 `b9008ab` | Apache-2.0；保留源码版权说明 |
 | 新增 Android 伴侣应用与 Passport 集成 | Muse Passport 社区修改 | Apache-2.0，见根目录 `LICENSE` |
-| 新增 iOS 伴侣应用：`ios/` | Muse Passport 社区修改；其中 `ios/PassportBridge/Sources/PassportBridge/Noise/` 由上游 `linux/src/musegadget/noise/` 移植为 Swift | Apache-2.0；移植文件保留上游版权说明并注明移植。只使用系统框架，没有第三方依赖 |
+| 新增 iOS 伴侣应用：`ios/` | Muse Passport 社区修改；其中 `ios/PassportBridge/Sources/PassportBridge/Noise/` 由上游 `linux/src/musegadget/noise/` 移植为 Swift | Apache-2.0；移植文件保留上游版权说明并注明移植。音频编码使用下列 libopus |
+| 回复朗读编解码：`shared/opus/` | [Xiph libopus 1.6.1](https://opus-codec.org/downloads/)，固定源码与校验值见目录 README | BSD-3-Clause，见 `Sources/PassportOpus/COPYING`；保留原始版权。两端手机编码，Passport 只链接使用到的解码函数 |
+| 两端朗读清洗中的 emoji 属性表 | [Unicode 17.0 emoji-data.txt](https://www.unicode.org/Public/17.0.0/ucd/emoji/emoji-data.txt) | Unicode License v3，见 `shared/UNICODE-LICENSE.txt`；仅用于识别装饰性 emoji 序列 |
 | `esp32/components/passport_bsp/`、相关厂商测试桩 | [FoloToy/ai-passport](https://gitee.com/FoloToy/ai-passport)，固定版本见 BSP `UPSTREAM.md` | MIT，保留目录内 `LICENSE` 和来源记录 |
 | `esp32/components/muse/fonts/` 字库 | [Adobe Source Han Sans](https://github.com/adobe-fonts/source-han-sans) | SIL Open Font License 1.1，见 `SOURCE_HAN_LICENSE.txt`；生成方式见字库 README |
 | `esp32/components/minimp3/` | [lieff/minimp3](https://github.com/lieff/minimp3) | CC0-1.0，见目录内 `LICENSE` |
@@ -17,7 +19,7 @@ Muse Passport 基于 Muse Gadget SDK，保留原作者的版权、许可证与�
 
 ## 上游资源例外
 
-上游 README 明确指出 **Jollybot avatar 不在 Apache-2.0 许可范围内**。`esp32/avatar/` 中的原始图像与相关生成素材应保留上游版权说明，不能根据根目录 LICENSE 推断可自由复用。保留在本仓库的上游文件不意味着本项目重新授权这些素材。社区 App 使用 `android/assets/muse-passport-icon.svg`、对应 Android 矢量资源和由它渲染的 iOS 图标；Passport 界面采用文字状态，宣传素材不使用 Jollybot。
+上游 README 明确指出 **Jollybot avatar 不在 Apache-2.0 许可范围内**。`esp32/avatar/` 中的原始图像与相关生成素材应保留上游版权说明，不能根据根目录 LICENSE 推断可自由复用。保留在本仓库的上游文件不意味着本项目重新授权这些素材。源码候选 Passport 主页复用 `esp32/avatar/muse_pixel.c` 的角色；`esp32/components/muse/passport_avatar.rgb565` 及对应描述文件由 `esp32/tools/gen_passport_avatar.py` 预渲染生成，沿用原角色的资源许可与版权例外。社区 App 使用 `android/assets/muse-passport-icon.svg`、对应 Android 矢量资源和由它渲染的 iOS 图标；宣传素材不使用 Jollybot。
 
 ## 共享开发签名密钥
 

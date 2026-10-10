@@ -69,6 +69,9 @@ class LinkEndpointLifecycleTest(unittest.TestCase):
 #include "vm_api.h"
 #include "diagnostic_log.h"
 #define CONFIG_MUSE_ENABLED 0
+#ifndef CONFIG_HOMEHUB_BUG_REPORT
+#define CONFIG_HOMEHUB_BUG_REPORT 1
+#endif
 #define ESP_LOGW(...) ((void)0)
 #define ESP_LOGE(...) ((void)0)
 #define ESP_OK 0
@@ -189,7 +192,7 @@ int main(void) {
     reset_fixture();
     assert(apply_endpoints(custom_api, custom_noise));
     assert(setup_wipe_to_clean());
-    assert(disconnects == 1 && log_clears == 1);
+    assert(disconnects == 1 && log_clears == CONFIG_HOMEHUB_BUG_REPORT);
     expect_endpoints(VM_API_DEFAULT_BASE_URL, NOISE_DEFAULT_HOST);
     assert(apply_endpoints(NULL, NULL));
     expect_endpoints(VM_API_DEFAULT_BASE_URL, NOISE_DEFAULT_HOST);
@@ -225,7 +228,7 @@ int main(void) {
         assert(apply_endpoints(custom_api, custom_noise));
         fail_key = failed_keys[i];
         assert(!apply_endpoints(custom_api, NULL));
-        assert(failures == 1 && log_clears == 1);
+        assert(failures == 1 && log_clears == CONFIG_HOMEHUB_BUG_REPORT);
         expect_endpoints(VM_API_DEFAULT_BASE_URL, NOISE_DEFAULT_HOST);
     }
     check_boot(false, false, false, false);  // Orphan endpoint keys.
@@ -243,13 +246,14 @@ int main(void) {
             source = Path(directory) / "endpoint_lifecycle.c"
             source.write_text(harness)
             for name, wifi, unpaired_wifi in (("devkit", "", 0), ("muse", "", 1),
-                                              ("dev_wifi", "dev", 0)):
+                                              ("dev_wifi", "dev", 0), ("no_reports", "", 0)):
                 with self.subTest(profile=name):
                     binary = Path(directory) / name
                     compiled = subprocess.run(
                         [*cc, "-std=c11", "-Wall", "-Wextra", "-Werror",
                          f'-DCONFIG_HOMEHUB_WIFI_SSID="{wifi}"',
                          f"-DWIFI_WITHOUT_PAIRING={unpaired_wifi}",
+                         f"-DCONFIG_HOMEHUB_BUG_REPORT={int(name != 'no_reports')}",
                          "-I", str(ROOT / "main"), str(source), "-o", str(binary)],
                         capture_output=True, text=True,
                     )

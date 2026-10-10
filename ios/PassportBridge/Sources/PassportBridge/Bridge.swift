@@ -9,6 +9,8 @@ public struct BridgeState: Equatable, Sendable {
     public var sdkTokenConfigured = false
     public var sdkSettingsPending = false
     public var sdkSettingsStatus = "连接 Passport 后可设置 SDK token"
+    public var speechSupported = false
+    public var speechFollowSupported = false
 
     public init() {}
 }
@@ -68,6 +70,7 @@ public actor Bridge {
     private let userAgent: String
     private let timing: BridgeTiming
     private let onState: @Sendable (BridgeState) -> Void
+    private let speech: (@Sendable (SpeechCommand) async -> Void)?
     private let toDevice: AsyncStream<(UInt8, UInt16, Data)>.Continuation
     private let commands: AsyncStream<BridgeMessage>.Continuation
     private var workers: [Task<Void, Never>] = []
@@ -95,11 +98,13 @@ public actor Bridge {
     /// - Parameter send: writes one message to the device; false once Bluetooth is gone.
     public init(network: any MuseNetwork, userAgent: String, timing: BridgeTiming = BridgeTiming(),
                 send: @escaping @Sendable (UInt8, UInt16, Data) async -> Bool,
-                onState: @escaping @Sendable (BridgeState) -> Void) {
+                onState: @escaping @Sendable (BridgeState) -> Void,
+                speech: (@Sendable (SpeechCommand) async -> Void)? = nil) {
         self.network = network
         self.userAgent = userAgent
         self.timing = timing
         self.onState = onState
+        self.speech = speech
         let (outgoing, toDevice) = AsyncStream<(UInt8, UInt16, Data)>.makeStream()
         let (incoming, commands) = AsyncStream<BridgeMessage>.makeStream(bufferingPolicy: .bufferingOldest(512))
         self.toDevice = toDevice
@@ -136,13 +141,25 @@ public actor Bridge {
     // MARK: Messages from the device
 
     /// Call for every message, in arrival order.
-    public func receive(_ message: BridgeMessage) {
+    public func receive(_ message: BridgeMessage) async {
         guard !stopped else { return }
         switch message.type {
         case BridgeMessageType.credentials: receivedCredentials(message.body)
         case BridgeMessageType.tokens:
             resolveTokenCommit((Self.object(message.body)?["ok"] as? Bool) == true)
         case BridgeMessageType.sdkSettings: receivedSDKSettings(message)
+        case BridgeMessageType.speechRequest:
+            if state.speechSupported, let request = Self.object(message.body),
+               let session = request["session"] as? UInt32,
+               let limit = request["limit"] as? UInt32,
+               let note = request["note"] as? String, let id = request["message"] as? String {
+                let text = cache.speechText(note: note, message: id) ?? ""
+                if state.speechFollowSupported, request["speech_follow"] as? String == "source-v1" {
+                    await speech?(.followRequest(session: session, text: text, limit: limit))
+                } else { await speech?(.request(session: session, text: text, limit: limit)) }
+            }
+        case BridgeMessageType.speechStatus:
+            if let status = try? SpeechStatus(message.body) { await speech?(.status(status)) }
         case BridgeMessageType.open, BridgeMessageType.data, BridgeMessageType.cancel:
             if case .dropped = commands.yield(message) {
                 update { $0.status = "蓝牙接收队列已满，请重连" }
@@ -162,6 +179,8 @@ public actor Bridge {
         resolveCredentialsWait()
         let supported = info["sdk_settings"] as? Bool == true, configured = info["sdk_token_configured"] as? Bool == true
         update {
+            $0.speechSupported = speech != nil && text("reply_speech") == "opus-16000-60-v1"
+            $0.speechFollowSupported = $0.speechSupported && text("speech_follow") == "source-v1"
             $0.sdkSettingsSupported = supported
             $0.sdkTokenConfigured = configured
             if !$0.sdkSettingsPending {
@@ -174,7 +193,9 @@ public actor Bridge {
             return
         }
         // Ready means this app is reachable, not that Muse is connected yet.
-        emit(BridgeMessageType.ready, 0, Data())
+        var capability = state.speechSupported ? ["reply_speech": "opus-16000-60-v1"] : [:]
+        if state.speechFollowSupported { capability["speech_follow"] = "source-v1" }
+        emit(BridgeMessageType.ready, 0, Self.json(capability))
         keepConnected(afterDrop: false)
     }
 

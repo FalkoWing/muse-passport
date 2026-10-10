@@ -51,6 +51,7 @@
 #include "muse_locale.h"
 #include "muse_passport_reader.h"
 #include "muse_wifi.h"
+#include "muse_speech.h"
 
 static const char *TAG = "muse_chat_link";
 
@@ -88,6 +89,7 @@ typedef struct {
     bool ok;            /* the page parsed */
     bool found;         /* it had a row */
     bool ready;         /* display_text_ready */
+    bool agent_busy;
     uint64_t seq;
     char event[24];
     char msg[80];
@@ -120,7 +122,7 @@ static struct {
     uint64_t after;                     /* history seq read up to */
     char note_id[80];
     int64_t t_end, t_poll, t_reply, t_show;
-    bool heard, replied, skipped_big;
+    bool heard, replied, skipped_big, speech_active, agent_busy;
     bool after_note;                    /* the walk is past the note's row, before any other user row */
     char error[EV_TEXT];                /* why the turn failed, repeated at the release */
     char text[TEXT_MAX];
@@ -352,6 +354,10 @@ static bool parse_object(scan_t *sp, row_t *r)
             if (!parse_object(&s, r)) {
                 return false;
             }
+        } else if (!strcmp(key, "agent_busy")) {
+            skip_ws(&s);
+            r->agent_busy = s.end - s.p >= 4 && !memcmp(s.p, "true", 4);
+            if (!skip_value(&s)) return false;
         } else if (strcmp(key, "chat_events")) {
             if (!skip_value(&s)) {
                 return false;
@@ -504,6 +510,7 @@ static void end_turn(void)
 
 static void fail(const char *why)
 {
+    muse_speech_stop();
     ESP_LOGW(TAG, "turn failed: %s", why);
     end_turn();
     strlcpy(s_turn.error, why, sizeof(s_turn.error));
@@ -597,6 +604,7 @@ static bool on_row(const row_t *r)
     if (!r->ready) {
         return false;   /* still being written; read it again */
     }
+    if (r->text[0] && !muse_speech_request(s_turn.note_id,r->msg)) return false;
     if (r->text[0]) {
         size_t len = strlen(s_turn.text);
         snprintf(s_turn.text + len, sizeof(s_turn.text) - len, "%s%s", len ? " " : "", r->text);
@@ -629,6 +637,7 @@ static void on_page(void)
         s_turn.skipped_big |= rx->overflow;
         return;
     }
+    s_turn.agent_busy = s_row.agent_busy;
     if (!s_turn.marked) {
         s_turn.marked = true;
         s_turn.after = s_row.found ? s_row.seq : 0;
@@ -663,6 +672,9 @@ static bool scroll(int64_t now)
 static void pump(void)
 {
     int64_t now = esp_timer_get_time();
+    bool busy=muse_speech_busy();
+    if (s_turn.speech_active && !busy) s_turn.t_reply=now;
+    s_turn.speech_active=busy;
     if (s_turn.phase == T_ACK && received(RX_NOTE)) {
         on_ack();
     }
@@ -675,7 +687,7 @@ static void pump(void)
         }
         return;
     }
-    if (!s_stream[RX_ROW] && now >= s_turn.t_poll && !poll_row()) {
+    if (!s_stream[RX_ROW] && !muse_speech_busy() && now >= s_turn.t_poll && !poll_row()) {
         fail(MUSE_UI_TEXT("LOST CONNECTION TO MUSE", "Muse 连接已断开"));
         return;
     }
@@ -686,12 +698,14 @@ static void pump(void)
 #else
             scroll(now)
 #endif
-            && now - s_turn.t_reply > SETTLE_US) {
+            && now - s_turn.t_reply > SETTLE_US && !muse_speech_busy()
+            && (!s_turn.agent_busy || now - s_turn.t_end > 180LL * 1000000)) {
             ESP_LOGI(TAG, "reply done: %u chars", (unsigned)strlen(s_turn.text));
             end_turn();
             emit(MUSE_HATCH_EV_DONE, NULL);
         }
-    } else if (now - s_turn.t_end > REPLY_TIMEOUT_US) {
+    } else if (now - s_turn.t_end > REPLY_TIMEOUT_US
+               && (!s_turn.agent_busy || now - s_turn.t_end > 180LL * 1000000)) {
         fail(s_turn.skipped_big ? MUSE_UI_TEXT("REPLY TOO LONG", "回复过长，请查看手机") : MUSE_UI_TEXT("NO REPLY FROM MUSE", "Muse 暂未回复，请重试"));
     }
 }
@@ -706,6 +720,7 @@ void muse_hatch_start(void)
     s_rx[RX_NOTE].body = ack;
     s_rx[RX_NOTE].cap = sizeof(ack);
     muse_passport_reader_start();
+    muse_speech_init();
 }
 
 void muse_hatch_status(muse_hatch_status_t *out)
@@ -767,6 +782,7 @@ bool muse_hatch_ready(void)
 
 void muse_hatch_turn_begin(void)
 {
+    muse_speech_reset();
     muse_passport_reader_reset();
     end_turn();
     xQueueReset(s_events);
@@ -852,6 +868,7 @@ void muse_hatch_turn_end(void)
 
 void muse_hatch_turn_cancel(void)
 {
+    muse_speech_stop();
     end_turn();
     xQueueReset(s_events);
 }

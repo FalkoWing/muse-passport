@@ -1,0 +1,6 @@
+set(PASSPORT_OPUS_ROOT "${CMAKE_CURRENT_LIST_DIR}/Sources/PassportOpus")
+include("${CMAKE_CURRENT_LIST_DIR}/sources.cmake")
+add_library(passport_opus STATIC ${PASSPORT_OPUS_SOURCES} "${PASSPORT_OPUS_ROOT}/passport_opus.c")
+target_include_directories(passport_opus PUBLIC "${PASSPORT_OPUS_ROOT}/public" PRIVATE "${PASSPORT_OPUS_ROOT}" "${PASSPORT_OPUS_ROOT}/include" "${PASSPORT_OPUS_ROOT}/celt" "${PASSPORT_OPUS_ROOT}/silk" "${PASSPORT_OPUS_ROOT}/silk/fixed")
+target_compile_definitions(passport_opus PRIVATE HAVE_CONFIG_H)
+set_target_properties(passport_opus PROPERTIES POSITION_INDEPENDENT_CODE ON)

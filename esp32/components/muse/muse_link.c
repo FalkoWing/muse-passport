@@ -24,6 +24,11 @@
 #include "muse_state.h"
 
 static const muse_link_ops_t *s_ops;
+bool muse_link_speech_ready(void) { return s_ops && s_ops->speech_ready && s_ops->speech_ready(); }
+bool muse_link_speech_follow_ready(void) { return s_ops && s_ops->speech_follow_ready && s_ops->speech_follow_ready(); }
+bool muse_link_speech_send(uint8_t type, const void *data, size_t len) {
+    return s_ops && s_ops->speech_send && s_ops->speech_send(type, data, len);
+}
 static volatile muse_link_state_t s_state = MUSE_LINK_BOOT;
 
 void muse_link_register(const muse_link_ops_t *ops)

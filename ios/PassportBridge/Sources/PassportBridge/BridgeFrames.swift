@@ -7,6 +7,7 @@ public enum BridgeMessageType {
     public static let open: UInt8 = 4, data: UInt8 = 5, cancel: UInt8 = 6
     public static let response: UInt8 = 7, ack: UInt8 = 8, tokens: UInt8 = 9
     public static let error: UInt8 = 10, text: UInt8 = 11, sdkSettings: UInt8 = 12
+    public static let speechRequest: UInt8 = 13, speechData: UInt8 = 14, speechStatus: UInt8 = 15
 }
 
 public struct BridgeMessage: Equatable, Sendable {

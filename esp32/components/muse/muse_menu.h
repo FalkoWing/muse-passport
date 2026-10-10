@@ -29,6 +29,7 @@
 typedef enum {
     MUSE_MENU_DOWN,     /* aux button: opens the menu, then moves down */
     MUSE_MENU_SELECT,   /* talk button, while the menu is open */
+    MUSE_MENU_UP,       /* previous item on boards with a third button */
 } muse_menu_key_t;
 
 /* Safe from any task. */
